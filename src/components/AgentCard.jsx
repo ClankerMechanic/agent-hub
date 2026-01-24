@@ -1,4 +1,6 @@
-export function AgentCard({ agent, onClick, onEdit, onDelete }) {
+import { FavoriteButton } from './FavoriteButton';
+
+export function AgentCard({ agent, onClick, onEdit, onDelete, isPinned, onTogglePin, showDragHandle, dragHandleProps }) {
   const handleEdit = (e) => {
     e.stopPropagation();
     onEdit?.(agent);
@@ -15,9 +17,22 @@ export function AgentCard({ agent, onClick, onEdit, onDelete }) {
     <div className="relative group">
       <button
         onClick={onClick}
-        className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all p-5 text-left w-full border border-gray-100 hover:border-blue-200"
+        className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all p-5 text-left w-full border ${
+          isPinned ? 'border-yellow-200 bg-yellow-50/30' : 'border-gray-100'
+        } hover:border-blue-200`}
       >
         <div className="flex items-start gap-3">
+          {showDragHandle && (
+            <div
+              {...dragHandleProps}
+              className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 -ml-1 mr-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 2zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 14zm6-8a2 2 0 1 0-.001-4.001A2 2 0 0 0 13 6zm0 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 14z" />
+              </svg>
+            </div>
+          )}
           <span className="text-3xl">{agent.icon}</span>
           <div className="flex-1 min-w-0">
             <span className="inline-block px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full mb-1.5">
@@ -29,6 +44,12 @@ export function AgentCard({ agent, onClick, onEdit, onDelete }) {
         </div>
       </button>
 
+      {/* Pin button - always visible on hover */}
+      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <FavoriteButton isPinned={isPinned} onToggle={onTogglePin} />
+      </div>
+
+      {/* Edit/Delete for custom agents */}
       {agent.isCustom && (
         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
           <button

@@ -1,48 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
-import { AgentCard, CreateAgentCard } from './components/AgentCard';
 import { ExecutionView } from './components/ExecutionView';
 import { Navigation } from './components/Navigation';
 import { CreateAgentModal } from './components/CreateAgentModal';
 import { HistoryView } from './components/HistoryView';
-import { agents as builtInAgents } from './config/agents';
+import { CategoryTabs } from './components/CategoryTabs';
+import { AgentDetailView } from './components/AgentDetailView';
+import { SortableAgentGrid } from './components/SortableAgentGrid';
+import { SortOptions } from './components/SortOptions';
+import { useAgentSorting } from './hooks/useAgentSorting';
+import { agents as builtInAgents, categories } from './config/agents';
 
 const API_KEY_STORAGE_KEY = 'agent-hub-api-key';
 const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
 const HISTORY_KEY = 'agent-hub-history';
+const PREFERENCES_KEY = 'agent-hub-preferences';
+
+const DEFAULT_PREFERENCES = {
+  pinnedAgentIds: [],
+  agentOrder: {},
+  sortPreference: 'manual'
+};
 
 function App() {
-  const [apiKey, setApiKey] = useState('');
+  // Use lazy initialization to read from localStorage
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE_KEY) || '');
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [view, setView] = useState('loading');
+  const [view, setView] = useState(() => {
+    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    return storedKey ? 'home' : 'settings';
+  });
   const [activeTab, setActiveTab] = useState('agents');
-  const [customAgents, setCustomAgents] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [customAgents, setCustomAgents] = useState(() => {
+    const stored = localStorage.getItem(CUSTOM_AGENTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
+  const [history, setHistory] = useState(() => {
+    const stored = localStorage.getItem(HISTORY_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [initialInput, setInitialInput] = useState('');
-
-  // Load data from localStorage on mount
-  useEffect(() => {
-    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-    const storedCustomAgents = localStorage.getItem(CUSTOM_AGENTS_KEY);
-    const storedHistory = localStorage.getItem(HISTORY_KEY);
-
-    if (storedKey) {
-      setApiKey(storedKey);
-      setView('home');
-    } else {
-      setView('settings');
-    }
-
-    if (storedCustomAgents) {
-      setCustomAgents(JSON.parse(storedCustomAgents));
-    }
-
-    if (storedHistory) {
-      setHistory(JSON.parse(storedHistory));
-    }
-  }, []);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [preferences, setPreferences] = useState(() => {
+    const stored = localStorage.getItem(PREFERENCES_KEY);
+    return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
+  });
 
   // Save custom agents to localStorage
   useEffect(() => {
@@ -54,7 +58,30 @@ function App() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }, [history]);
 
-  const allAgents = [...builtInAgents, ...customAgents];
+  // Save preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+  }, [preferences]);
+
+  const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
+
+  const agentCounts = useMemo(() => {
+    return allAgents.reduce((counts, agent) => {
+      const cat = agent.isCustom ? 'Custom' : agent.category;
+      counts[cat] = (counts[cat] || 0) + 1;
+      return counts;
+    }, {});
+  }, [allAgents]);
+
+  const categoryFilteredAgents = useMemo(() => {
+    if (activeCategory === 'all') return allAgents;
+    if (activeCategory === 'Custom') {
+      return allAgents.filter(a => a.isCustom);
+    }
+    return allAgents.filter(a => !a.isCustom && a.category === activeCategory);
+  }, [allAgents, activeCategory]);
+
+  const sortedAgents = useAgentSorting(categoryFilteredAgents, preferences, history);
 
   const handleSaveApiKey = (key) => {
     localStorage.setItem(API_KEY_STORAGE_KEY, key);
@@ -65,6 +92,10 @@ function App() {
   const handleSelectAgent = (agent) => {
     setSelectedAgent(agent);
     setInitialInput('');
+    setView('agent-detail');
+  };
+
+  const handleExecuteFromDetail = () => {
     setView('execution');
   };
 
@@ -72,6 +103,11 @@ function App() {
     setSelectedAgent(null);
     setInitialInput('');
     setView('home');
+  };
+
+  const handleBackToDetail = () => {
+    setInitialInput('');
+    setView('agent-detail');
   };
 
   const handleOpenSettings = () => {
@@ -106,6 +142,53 @@ function App() {
     }
   };
 
+  const handleDeleteHistoryItem = (historyId) => {
+    setHistory(prev => prev.filter(item => item.id !== historyId));
+  };
+
+  const handleTogglePin = (agentId) => {
+    setPreferences(prev => {
+      const isPinned = prev.pinnedAgentIds.includes(agentId);
+      return {
+        ...prev,
+        pinnedAgentIds: isPinned
+          ? prev.pinnedAgentIds.filter(id => id !== agentId)
+          : [...prev.pinnedAgentIds, agentId]
+      };
+    });
+  };
+
+  const handleReorder = (oldIndex, newIndex) => {
+    const agents = sortedAgents;
+    const movedAgent = agents[oldIndex];
+    const category = movedAgent.isCustom ? 'Custom' : movedAgent.category;
+
+    // Get current category agents in order
+    const categoryAgents = agents.filter(a =>
+      a.isCustom ? category === 'Custom' : a.category === category
+    );
+    const ids = categoryAgents.map(a => a.id);
+
+    // Reorder
+    const [removed] = ids.splice(oldIndex, 1);
+    ids.splice(newIndex, 0, removed);
+
+    setPreferences(prev => ({
+      ...prev,
+      agentOrder: {
+        ...prev.agentOrder,
+        [category]: ids
+      }
+    }));
+  };
+
+  const handleSortPreferenceChange = (newPreference) => {
+    setPreferences(prev => ({
+      ...prev,
+      sortPreference: newPreference
+    }));
+  };
+
   const handleRerun = (historyItem) => {
     const agent = allAgents.find(a => a.id === historyItem.agentId);
     if (agent) {
@@ -130,6 +213,42 @@ function App() {
     return <Settings onSave={handleSaveApiKey} initialApiKey={apiKey} />;
   }
 
+  // Agent detail view
+  if (view === 'agent-detail' && selectedAgent) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            handleBackToHome();
+          }}
+          onSettingsClick={handleOpenSettings}
+        />
+        <div className="p-4">
+          <AgentDetailView
+            agent={selectedAgent}
+            history={history}
+            onExecute={handleExecuteFromDetail}
+            onBack={handleBackToHome}
+            onEdit={handleEditAgent}
+            onRerun={handleRerun}
+            onDeleteHistory={handleDeleteHistoryItem}
+          />
+        </div>
+        <CreateAgentModal
+          isOpen={showCreateModal}
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingAgent(null);
+          }}
+          onSave={handleSaveCustomAgent}
+          editAgent={editingAgent}
+        />
+      </div>
+    );
+  }
+
   // Execution view
   if (view === 'execution' && selectedAgent) {
     return (
@@ -146,7 +265,7 @@ function App() {
           <ExecutionView
             agent={selectedAgent}
             apiKey={apiKey}
-            onBack={handleBackToHome}
+            onBack={handleBackToDetail}
             onSaveHistory={handleSaveHistory}
             initialInput={initialInput}
           />
@@ -167,25 +286,35 @@ function App() {
       <div className="p-4">
         {activeTab === 'agents' ? (
           <div className="max-w-4xl mx-auto">
-            <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
               <p className="text-gray-600">Select an AI agent to get started</p>
+              <SortOptions
+                value={preferences.sortPreference}
+                onChange={handleSortPreferenceChange}
+              />
             </div>
 
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {allAgents.map((agent) => (
-                <AgentCard
-                  key={agent.id}
-                  agent={agent}
-                  onClick={() => handleSelectAgent(agent)}
-                  onEdit={handleEditAgent}
-                  onDelete={handleDeleteAgent}
-                />
-              ))}
-              <CreateAgentCard onClick={() => {
+            <CategoryTabs
+              categories={categories}
+              activeCategory={activeCategory}
+              onCategoryChange={setActiveCategory}
+              agentCounts={agentCounts}
+            />
+
+            <SortableAgentGrid
+              agents={sortedAgents}
+              onSelectAgent={handleSelectAgent}
+              onEditAgent={handleEditAgent}
+              onDeleteAgent={handleDeleteAgent}
+              pinnedAgentIds={preferences.pinnedAgentIds}
+              onTogglePin={handleTogglePin}
+              onReorder={handleReorder}
+              isManualSort={preferences.sortPreference === 'manual'}
+              onCreateAgent={() => {
                 setEditingAgent(null);
                 setShowCreateModal(true);
-              }} />
-            </div>
+              }}
+            />
           </div>
         ) : (
           <HistoryView
