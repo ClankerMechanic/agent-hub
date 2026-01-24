@@ -287,7 +287,7 @@ function App() {
         {activeTab === 'agents' ? (
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-gray-600">Select an AI agent to get started</p>
+              <p className="text-gray-600">Select an AI agent to get started <span className="text-xs text-blue-500">(v3)</span></p>
               <SortOptions
                 value={preferences.sortPreference}
                 onChange={handleSortPreferenceChange}
