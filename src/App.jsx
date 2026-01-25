@@ -1,117 +1,171 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
-import { ExecutionView } from './components/ExecutionView';
-import { Navigation } from './components/Navigation';
 import { CreateAgentModal } from './components/CreateAgentModal';
-import { HistoryView } from './components/HistoryView';
-import { CategoryTabs } from './components/CategoryTabs';
-import { AgentDetailView } from './components/AgentDetailView';
-import { SortableAgentGrid } from './components/SortableAgentGrid';
-import { SortOptions } from './components/SortOptions';
-import { useAgentSorting } from './hooks/useAgentSorting';
-import { agents as builtInAgents, categories } from './config/agents';
+import { AppLayout } from './components/layout/AppLayout';
+import { LeftSidebar } from './components/layout/LeftSidebar';
+import { RightSidebar } from './components/layout/RightSidebar';
+import { MainContent } from './components/layout/MainContent';
+import { executeAgent } from './services/claudeApi';
+import { agents as builtInAgents } from './config/agents';
 
 const API_KEY_STORAGE_KEY = 'agent-hub-api-key';
 const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
-const HISTORY_KEY = 'agent-hub-history';
-const PREFERENCES_KEY = 'agent-hub-preferences';
-
-const DEFAULT_PREFERENCES = {
-  pinnedAgentIds: [],
-  agentOrder: {},
-  sortPreference: 'manual'
-};
+const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
+const MODEL_KEY = 'agent-hub-model';
 
 function App() {
-  // Use lazy initialization to read from localStorage
+  // Core state
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE_KEY) || '');
-  const [selectedAgent, setSelectedAgent] = useState(null);
-  const [view, setView] = useState(() => {
-    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-    return storedKey ? 'home' : 'settings';
-  });
-  const [activeTab, setActiveTab] = useState('agents');
+  const [showSettings, setShowSettings] = useState(() => !localStorage.getItem(API_KEY_STORAGE_KEY));
+
+  // Agent state
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [customAgents, setCustomAgents] = useState(() => {
     const stored = localStorage.getItem(CUSTOM_AGENTS_KEY);
     return stored ? JSON.parse(stored) : [];
   });
-  const [history, setHistory] = useState(() => {
-    const stored = localStorage.getItem(HISTORY_KEY);
-    return stored ? JSON.parse(stored) : [];
+
+  // Chat state
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [chatSessions, setChatSessions] = useState(() => {
+    const stored = localStorage.getItem(CHAT_SESSIONS_KEY);
+    return stored ? JSON.parse(stored) : {};
   });
+  const [currentMessages, setCurrentMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // UI state
+  const [selectedModel, setSelectedModel] = useState(() =>
+    localStorage.getItem(MODEL_KEY) || 'claude-sonnet-4-20250514'
+  );
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
-  const [initialInput, setInitialInput] = useState('');
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [preferences, setPreferences] = useState(() => {
-    const stored = localStorage.getItem(PREFERENCES_KEY);
-    return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
-  });
 
-  // Save custom agents to localStorage
+  // Combine built-in and custom agents
+  const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
+
+  // Get selected agent object
+  const selectedAgent = useMemo(() =>
+    allAgents.find(a => a.id === selectedAgentId) || null,
+    [allAgents, selectedAgentId]
+  );
+
+  // Persist to localStorage
   useEffect(() => {
     localStorage.setItem(CUSTOM_AGENTS_KEY, JSON.stringify(customAgents));
   }, [customAgents]);
 
-  // Save history to localStorage
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  }, [history]);
+    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions));
+  }, [chatSessions]);
 
-  // Save preferences to localStorage
   useEffect(() => {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
-  }, [preferences]);
+    localStorage.setItem(MODEL_KEY, selectedModel);
+  }, [selectedModel]);
 
-  const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
-
-  const agentCounts = useMemo(() => {
-    return allAgents.reduce((counts, agent) => {
-      const cat = agent.isCustom ? 'Custom' : agent.category;
-      counts[cat] = (counts[cat] || 0) + 1;
-      return counts;
-    }, {});
-  }, [allAgents]);
-
-  const categoryFilteredAgents = useMemo(() => {
-    if (activeCategory === 'all') return allAgents;
-    if (activeCategory === 'Custom') {
-      return allAgents.filter(a => a.isCustom);
+  // Load messages when chat session changes
+  useEffect(() => {
+    if (activeChatId && chatSessions[activeChatId]) {
+      setCurrentMessages(chatSessions[activeChatId].messages || []);
+    } else {
+      setCurrentMessages([]);
     }
-    return allAgents.filter(a => !a.isCustom && a.category === activeCategory);
-  }, [allAgents, activeCategory]);
+  }, [activeChatId, chatSessions]);
 
-  const sortedAgents = useAgentSorting(categoryFilteredAgents, preferences, history);
-
+  // Handlers
   const handleSaveApiKey = (key) => {
     localStorage.setItem(API_KEY_STORAGE_KEY, key);
     setApiKey(key);
-    setView('home');
+    setShowSettings(false);
   };
 
-  const handleSelectAgent = (agent) => {
-    setSelectedAgent(agent);
-    setInitialInput('');
-    setView('agent-detail');
+  const handleSelectAgent = (agentId) => {
+    setSelectedAgentId(agentId);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setPromptExpanded(false);
   };
 
-  const handleExecuteFromDetail = () => {
-    setView('execution');
+  const handleNewChat = () => {
+    setActiveChatId(null);
+    setCurrentMessages([]);
   };
 
-  const handleBackToHome = () => {
-    setSelectedAgent(null);
-    setInitialInput('');
-    setView('home');
+  const handleSelectChat = (chatId) => {
+    const session = chatSessions[chatId];
+    if (session) {
+      setActiveChatId(chatId);
+      setSelectedAgentId(session.agentId);
+    }
   };
 
-  const handleBackToDetail = () => {
-    setInitialInput('');
-    setView('agent-detail');
-  };
+  const handleSendMessage = async (content) => {
+    if (!selectedAgent || !content.trim()) return;
 
-  const handleOpenSettings = () => {
-    setView('settings');
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: content.trim(),
+      timestamp: Date.now()
+    };
+
+    // Add user message to current messages
+    const newMessages = [...currentMessages, userMessage];
+    setCurrentMessages(newMessages);
+    setIsLoading(true);
+
+    try {
+      // Call API
+      const result = await executeAgent(selectedAgent.systemPrompt, content, apiKey, selectedModel);
+
+      if (result.success) {
+        const assistantMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: result.content,
+          timestamp: Date.now()
+        };
+
+        const updatedMessages = [...newMessages, assistantMessage];
+        setCurrentMessages(updatedMessages);
+
+        // Create or update chat session
+        const chatId = activeChatId || `chat-${Date.now()}`;
+        setChatSessions(prev => ({
+          ...prev,
+          [chatId]: {
+            id: chatId,
+            agentId: selectedAgentId,
+            createdAt: prev[chatId]?.createdAt || Date.now(),
+            messages: updatedMessages
+          }
+        }));
+
+        if (!activeChatId) {
+          setActiveChatId(chatId);
+        }
+      } else {
+        // Show error as assistant message
+        const errorMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: `Error: ${result.error}`,
+          timestamp: Date.now()
+        };
+        setCurrentMessages([...newMessages, errorMessage]);
+      }
+    } catch (error) {
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: `Error: ${error.message}`,
+        timestamp: Date.now()
+      };
+      setCurrentMessages([...newMessages, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSaveCustomAgent = (agent) => {
@@ -121,209 +175,60 @@ function App() {
       setCustomAgents(prev => [...prev, agent]);
     }
     setEditingAgent(null);
+    setShowCreateModal(false);
   };
 
-  const handleEditAgent = (agent) => {
-    setEditingAgent(agent);
-    setShowCreateModal(true);
-  };
-
-  const handleDeleteAgent = (agentId) => {
-    setCustomAgents(prev => prev.filter(a => a.id !== agentId));
-  };
-
-  const handleSaveHistory = (entry) => {
-    setHistory(prev => [entry, ...prev]);
-  };
-
-  const handleClearHistory = () => {
-    if (confirm('Clear all history?')) {
-      setHistory([]);
-    }
-  };
-
-  const handleDeleteHistoryItem = (historyId) => {
-    setHistory(prev => prev.filter(item => item.id !== historyId));
-  };
-
-  const handleTogglePin = (agentId) => {
-    setPreferences(prev => {
-      const isPinned = prev.pinnedAgentIds.includes(agentId);
-      return {
-        ...prev,
-        pinnedAgentIds: isPinned
-          ? prev.pinnedAgentIds.filter(id => id !== agentId)
-          : [...prev.pinnedAgentIds, agentId]
-      };
-    });
-  };
-
-  const handleReorder = (oldIndex, newIndex) => {
-    const agents = sortedAgents;
-    const movedAgent = agents[oldIndex];
-    const category = movedAgent.isCustom ? 'Custom' : movedAgent.category;
-
-    // Get current category agents in order
-    const categoryAgents = agents.filter(a =>
-      a.isCustom ? category === 'Custom' : a.category === category
+  const handleUpdatePrompt = (newPrompt) => {
+    if (!selectedAgent?.isCustom) return;
+    setCustomAgents(prev =>
+      prev.map(a => a.id === selectedAgentId ? { ...a, systemPrompt: newPrompt } : a)
     );
-    const ids = categoryAgents.map(a => a.id);
-
-    // Reorder
-    const [removed] = ids.splice(oldIndex, 1);
-    ids.splice(newIndex, 0, removed);
-
-    setPreferences(prev => ({
-      ...prev,
-      agentOrder: {
-        ...prev.agentOrder,
-        [category]: ids
-      }
-    }));
   };
 
-  const handleSortPreferenceChange = (newPreference) => {
-    setPreferences(prev => ({
-      ...prev,
-      sortPreference: newPreference
-    }));
-  };
-
-  const handleRerun = (historyItem) => {
-    const agent = allAgents.find(a => a.id === historyItem.agentId);
-    if (agent) {
-      setSelectedAgent(agent);
-      setInitialInput(historyItem.input);
-      setView('execution');
-      setActiveTab('agents');
-    }
-  };
-
-  // Loading state
-  if (view === 'loading') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-
-  // Settings view
-  if (view === 'settings') {
+  // Show settings if no API key
+  if (showSettings) {
     return <Settings onSave={handleSaveApiKey} initialApiKey={apiKey} />;
   }
 
-  // Agent detail view
-  if (view === 'agent-detail' && selectedAgent) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navigation
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            handleBackToHome();
-          }}
-          onSettingsClick={handleOpenSettings}
-        />
-        <div className="p-4">
-          <AgentDetailView
-            agent={selectedAgent}
-            history={history}
-            onExecute={handleExecuteFromDetail}
-            onBack={handleBackToHome}
-            onEdit={handleEditAgent}
-            onRerun={handleRerun}
-            onDeleteHistory={handleDeleteHistoryItem}
-          />
-        </div>
-        <CreateAgentModal
-          isOpen={showCreateModal}
-          onClose={() => {
-            setShowCreateModal(false);
-            setEditingAgent(null);
-          }}
-          onSave={handleSaveCustomAgent}
-          editAgent={editingAgent}
-        />
-      </div>
-    );
-  }
-
-  // Execution view
-  if (view === 'execution' && selectedAgent) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navigation
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            handleBackToHome();
-          }}
-          onSettingsClick={handleOpenSettings}
-        />
-        <div className="p-4">
-          <ExecutionView
-            agent={selectedAgent}
-            apiKey={apiKey}
-            onBack={handleBackToDetail}
-            onSaveHistory={handleSaveHistory}
-            initialInput={initialInput}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Main view with tabs
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onSettingsClick={handleOpenSettings}
-      />
-
-      <div className="p-4">
-        {activeTab === 'agents' ? (
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-gray-600">Select an AI agent to get started <span className="text-xs text-blue-500">(v3)</span></p>
-              <SortOptions
-                value={preferences.sortPreference}
-                onChange={handleSortPreferenceChange}
-              />
-            </div>
-
-            <CategoryTabs
-              categories={categories}
-              activeCategory={activeCategory}
-              onCategoryChange={setActiveCategory}
-              agentCounts={agentCounts}
-            />
-
-            <SortableAgentGrid
-              agents={sortedAgents}
-              onSelectAgent={handleSelectAgent}
-              onEditAgent={handleEditAgent}
-              onDeleteAgent={handleDeleteAgent}
-              pinnedAgentIds={preferences.pinnedAgentIds}
-              onTogglePin={handleTogglePin}
-              onReorder={handleReorder}
-              isManualSort={preferences.sortPreference === 'manual'}
-              onCreateAgent={() => {
-                setEditingAgent(null);
-                setShowCreateModal(true);
-              }}
-            />
-          </div>
-        ) : (
-          <HistoryView
-            history={history}
-            onRerun={handleRerun}
-            onClearHistory={handleClearHistory}
+    <>
+      <AppLayout
+        leftSidebar={
+          <LeftSidebar
+            onNewChat={handleNewChat}
+            onSettingsClick={() => setShowSettings(true)}
+            chatSessions={chatSessions}
+            selectedAgentId={selectedAgentId}
+            activeChatId={activeChatId}
+            onSelectChat={handleSelectChat}
+            agents={allAgents}
           />
-        )}
-      </div>
+        }
+        mainContent={
+          <MainContent
+            agent={selectedAgent}
+            messages={currentMessages}
+            isLoading={isLoading}
+            promptExpanded={promptExpanded}
+            onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
+            onSendMessage={handleSendMessage}
+            onUpdatePrompt={handleUpdatePrompt}
+          />
+        }
+        rightSidebar={
+          <RightSidebar
+            agents={allAgents}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={handleSelectAgent}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            onCreateAgent={() => {
+              setEditingAgent(null);
+              setShowCreateModal(true);
+            }}
+          />
+        }
+      />
 
       <CreateAgentModal
         isOpen={showCreateModal}
@@ -334,7 +239,7 @@ function App() {
         onSave={handleSaveCustomAgent}
         editAgent={editingAgent}
       />
-    </div>
+    </>
   );
 }
 
