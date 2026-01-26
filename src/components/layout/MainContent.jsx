@@ -11,9 +11,9 @@ export function MainContent({
   onTogglePrompt,
   onSendMessage,
   onUpdatePrompt,
-  onStartDirectChat
+  onStartGenericChat
 }) {
-  // No agent selected - show welcome state with direct chat option
+  // No agent selected - show welcome state with generic chat option
   if (!agent) {
     return (
       <div className="flex flex-col h-full bg-gray-50">
@@ -26,13 +26,13 @@ export function MainContent({
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Welcome to Agent Hub</h2>
             <p className="text-gray-600 max-w-md mb-6">
-              Select an agent from the right sidebar to start a conversation, or chat directly with Claude below.
+              Select an agent from the right sidebar to start a conversation, or start a generic chat below.
             </p>
             <button
-              onClick={onStartDirectChat}
+              onClick={onStartGenericChat}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Start Direct Chat
+              Start Generic Chat
             </button>
           </div>
         </div>

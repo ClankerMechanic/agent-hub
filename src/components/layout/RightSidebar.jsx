@@ -7,6 +7,9 @@ export function RightSidebar({
   onSelectAgent,
   selectedModel,
   onModelChange,
+  llmSettings,
+  onLlmSettingsChange,
+  apiKeys,
   onCreateAgent
 }) {
   const builtInAgents = agents.filter(a => !a.isCustom);
@@ -14,11 +17,14 @@ export function RightSidebar({
 
   return (
     <div className="flex flex-col h-full">
-      {/* LLM Selector */}
+      {/* LLM Selector & Settings */}
       <div className="p-3 border-b border-gray-200">
         <LLMSelector
           value={selectedModel}
           onChange={onModelChange}
+          llmSettings={llmSettings}
+          onLlmSettingsChange={onLlmSettingsChange}
+          apiKeys={apiKeys}
         />
       </div>
 
