@@ -7,13 +7,14 @@ import {
 } from '../services/github';
 
 export function GitHubSettings({ config, onConfigChange, onClose, isOpen }) {
+  // All hooks must be called before any early returns (React rules of hooks)
   const [localConfig, setLocalConfig] = useState(config || DEFAULT_GITHUB_CONFIG);
-
-  // Don't render if not open
-  if (!isOpen) return null;
   const [testStatus, setTestStatus] = useState(null); // null | 'testing' | 'success' | 'error'
   const [testMessage, setTestMessage] = useState('');
   const [showToken, setShowToken] = useState(false);
+
+  // Don't render if not open - AFTER all hooks
+  if (!isOpen) return null;
 
   const handleChange = (field, value) => {
     setLocalConfig(prev => ({ ...prev, [field]: value }));

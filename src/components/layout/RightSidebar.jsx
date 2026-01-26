@@ -1,15 +1,9 @@
-import { LLMSelector } from '../agent/LLMSelector';
 import { AgentListItem } from '../agent/AgentListItem';
 
 export function RightSidebar({
   agents,
   selectedAgentId,
   onSelectAgent,
-  selectedModel,
-  onModelChange,
-  llmSettings,
-  onLlmSettingsChange,
-  apiKeys,
   onCreateAgent
 }) {
   const builtInAgents = agents.filter(a => !a.isCustom);
@@ -17,15 +11,22 @@ export function RightSidebar({
 
   return (
     <div className="flex flex-col h-full">
-      {/* LLM Selector & Settings */}
+      {/* General Chat Button */}
       <div className="p-3 border-b border-gray-200">
-        <LLMSelector
-          value={selectedModel}
-          onChange={onModelChange}
-          llmSettings={llmSettings}
-          onLlmSettingsChange={onLlmSettingsChange}
-          apiKeys={apiKeys}
-        />
+        <button
+          onClick={() => onSelectAgent('general-chat')}
+          className={`w-full p-3 rounded-lg flex items-center gap-3 transition-colors ${
+            selectedAgentId === 'general-chat'
+              ? 'bg-blue-50 border border-blue-200'
+              : 'bg-gray-50 hover:bg-gray-100 border border-transparent'
+          }`}
+        >
+          <span className="text-xl">💬</span>
+          <div className="text-left">
+            <div className="font-medium text-gray-900">General Chat</div>
+            <div className="text-xs text-gray-500">Chat without a system prompt</div>
+          </div>
+        </button>
       </div>
 
       {/* Agent List */}

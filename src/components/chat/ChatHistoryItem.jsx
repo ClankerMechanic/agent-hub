@@ -1,3 +1,18 @@
+// Color mapping for agent categories
+export const categoryColors = {
+  'Communication': 'bg-blue-100 text-blue-700',
+  'Productivity': 'bg-green-100 text-green-700',
+  'Writing': 'bg-purple-100 text-purple-700',
+  'Research': 'bg-yellow-100 text-yellow-700',
+  'Analysis': 'bg-orange-100 text-orange-700',
+  'Custom': 'bg-pink-100 text-pink-700',
+  'General': 'bg-gray-100 text-gray-600'
+};
+
+export function getCategoryColor(category) {
+  return categoryColors[category] || categoryColors['General'];
+}
+
 function formatRelativeTime(timestamp) {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) return 'Just now';
@@ -12,9 +27,12 @@ function formatRelativeTime(timestamp) {
 }
 
 export function ChatHistoryItem({ session, isActive, onClick, agent }) {
-  // Get first user message for preview
+  // Get first user message for preview - increased to 80 chars
   const firstUserMessage = session.messages?.find(m => m.role === 'user');
-  const preview = firstUserMessage?.content?.substring(0, 50) || 'New conversation';
+  const preview = firstUserMessage?.content?.substring(0, 80) || 'New conversation';
+
+  // Get category color
+  const tagColor = getCategoryColor(agent?.category);
 
   return (
     <button
@@ -29,14 +47,14 @@ export function ChatHistoryItem({ session, isActive, onClick, agent }) {
         <span className="text-sm flex-shrink-0">{agent?.icon || '💬'}</span>
         <div className="min-w-0 flex-1">
           <p className="text-sm text-gray-900 truncate">
-            {preview}...
+            {preview}{preview.length >= 80 ? '...' : ''}
           </p>
           <div className="flex items-center justify-between mt-0.5">
             <p className="text-xs text-gray-500">
               {formatRelativeTime(session.createdAt)}
             </p>
-            <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded truncate max-w-[80px]">
-              {agent?.name || 'Generic'}
+            <span className={`text-xs px-1.5 py-0.5 rounded truncate max-w-[100px] ${tagColor}`}>
+              {agent?.name || 'General'}
             </span>
           </div>
         </div>

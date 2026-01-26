@@ -25,15 +25,15 @@ const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
 const MODEL_KEY = 'agent-hub-model';
 const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
 
-// Generic chat pseudo-agent (no system prompt)
-const GENERIC_CHAT_AGENT = {
-  id: 'generic-chat',
-  name: 'Generic Chat',
+// General chat pseudo-agent (no system prompt)
+const GENERAL_CHAT_AGENT = {
+  id: 'general-chat',
+  name: 'General Chat',
   description: 'Chat directly with the LLM without a system prompt',
   icon: '💬',
   category: 'General',
   systemPrompt: '',
-  isGenericChat: true
+  isGeneralChat: true
 };
 
 function App() {
@@ -104,7 +104,7 @@ function App() {
 
   // Get selected agent object (including generic chat and prompt overrides)
   const selectedAgent = useMemo(() => {
-    if (selectedAgentId === 'generic-chat') return GENERIC_CHAT_AGENT;
+    if (selectedAgentId === 'general-chat') return GENERAL_CHAT_AGENT;
     const agent = allAgents.find(a => a.id === selectedAgentId);
     if (!agent) return null;
     // Apply prompt override if exists
@@ -205,7 +205,7 @@ function App() {
       setCurrentMessages([]);
     } else {
       // No agent selected - go to Generic Chat
-      setSelectedAgentId('generic-chat');
+      setSelectedAgentId('general-chat');
       setActiveChatId(null);
       setCurrentMessages([]);
     }
@@ -503,13 +503,18 @@ function App() {
             onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
             onSendMessage={handleSendMessage}
             onUpdatePrompt={handleUpdatePrompt}
-            onStartGenericChat={() => setSelectedAgentId('generic-chat')}
+            onStartGeneralChat={() => setSelectedAgentId('general-chat')}
             sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             apiKeys={apiKeys}
             githubEnabled={isGitHubConfigured(githubConfig)}
             onShowVersionHistory={() => setShowVersionHistory(true)}
+            onClose={() => {
+              setSelectedAgentId(null);
+              setActiveChatId(null);
+              setCurrentMessages([]);
+            }}
           />
         }
         rightSidebar={
@@ -517,11 +522,6 @@ function App() {
             agents={allAgents}
             selectedAgentId={selectedAgentId}
             onSelectAgent={handleSelectAgent}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
-            llmSettings={llmSettings}
-            onLlmSettingsChange={setLlmSettings}
-            apiKeys={apiKeys}
             onCreateAgent={() => {
               setEditingAgent(null);
               setShowCreateModal(true);

@@ -11,13 +11,14 @@ export function MainContent({
   onTogglePrompt,
   onSendMessage,
   onUpdatePrompt,
-  onStartGenericChat,
+  onStartGeneralChat,
   sessionUsage,
   selectedModel,
   onModelChange,
   apiKeys,
   githubEnabled,
-  onShowVersionHistory
+  onShowVersionHistory,
+  onClose
 }) {
   // No agent selected - show welcome state with generic chat option
   if (!agent) {
@@ -35,10 +36,10 @@ export function MainContent({
               Select an agent from the right sidebar to start a conversation, or start a generic chat below.
             </p>
             <button
-              onClick={onStartGenericChat}
+              onClick={onStartGeneralChat}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Start Generic Chat
+              Start General Chat
             </button>
           </div>
         </div>
@@ -55,6 +56,7 @@ export function MainContent({
         selectedModel={selectedModel}
         onModelChange={onModelChange}
         apiKeys={apiKeys}
+        onClose={onClose}
       />
 
       {/* Editable Prompt */}

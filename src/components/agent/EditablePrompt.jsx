@@ -24,8 +24,8 @@ export function EditablePrompt({ prompt, expanded, onToggle, onUpdate, isCustom,
     ? prompt.substring(0, 100) + '...'
     : prompt || '(No system prompt)';
 
-  // Don't show prompt section for direct chat
-  if (!prompt && prompt !== '') {
+  // Don't show prompt section for general chat (empty prompt)
+  if (!prompt) {
     return null;
   }
 

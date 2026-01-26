@@ -1,6 +1,6 @@
 import { PROVIDERS } from '../../config/models';
 
-export function AgentHeader({ agent, sessionUsage, selectedModel, onModelChange, apiKeys = {} }) {
+export function AgentHeader({ agent, sessionUsage, selectedModel, onModelChange, apiKeys = {}, onClose }) {
   // Format token count
   const formatTokens = (count) => {
     if (!count) return '0';
@@ -78,6 +78,19 @@ export function AgentHeader({ agent, sessionUsage, selectedModel, onModelChange,
                 {formatTokens(totalTokens)} tokens
               </div>
             </div>
+          )}
+
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors ml-2"
+              title="Close agent"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           )}
         </div>
       </div>
