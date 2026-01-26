@@ -344,6 +344,9 @@ function App() {
             onUpdatePrompt={handleUpdatePrompt}
             onStartGenericChat={() => setSelectedAgentId('generic-chat')}
             sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            apiKeys={apiKeys}
           />
         }
         rightSidebar={

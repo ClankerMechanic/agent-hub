@@ -1,4 +1,6 @@
-export function AgentHeader({ agent, sessionUsage, activeModel }) {
+import { PROVIDERS } from '../../config/models';
+
+export function AgentHeader({ agent, sessionUsage, selectedModel, onModelChange, apiKeys = {} }) {
   // Format token count
   const formatTokens = (count) => {
     if (!count) return '0';
@@ -19,6 +21,9 @@ export function AgentHeader({ agent, sessionUsage, activeModel }) {
     ? (sessionUsage.inputTokens || 0) + (sessionUsage.outputTokens || 0)
     : 0;
 
+  // Effective model: agent's preferred or global selection
+  const effectiveModel = agent.preferredModel || selectedModel;
+
   return (
     <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
       <div className="flex items-center justify-between">
@@ -30,27 +35,51 @@ export function AgentHeader({ agent, sessionUsage, activeModel }) {
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
                 {agent.category}
               </span>
-              {agent.preferredModel && (
-                <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
-                  {agent.preferredModel.split('-').slice(0, 2).join(' ')}
-                </span>
-              )}
             </div>
             <p className="text-sm text-gray-600">{agent.description}</p>
           </div>
         </div>
 
-        {/* Session usage stats */}
-        {totalTokens > 0 && (
-          <div className="text-right">
-            <div className="text-sm font-medium text-gray-700">
-              {formatCost(sessionUsage?.totalCost)}
-            </div>
-            <div className="text-xs text-gray-500">
-              {formatTokens(totalTokens)} tokens
-            </div>
+        {/* Right side: Model selector + Stats */}
+        <div className="flex items-center gap-4">
+          {/* Model Selector */}
+          <div className="flex flex-col items-end">
+            <label className="text-xs text-gray-500 mb-0.5">Model</label>
+            <select
+              value={effectiveModel}
+              onChange={(e) => onModelChange(e.target.value)}
+              className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer min-w-[140px]"
+            >
+              {Object.entries(PROVIDERS).map(([providerId, provider]) => {
+                if (!apiKeys[providerId]) return null;
+                return (
+                  <optgroup key={providerId} label={provider.name}>
+                    {provider.models.map(model => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            {agent.preferredModel && (
+              <span className="text-xs text-purple-600 mt-0.5">Agent default</span>
+            )}
           </div>
-        )}
+
+          {/* Session usage stats */}
+          {totalTokens > 0 && (
+            <div className="text-right border-l border-gray-200 pl-4">
+              <div className="text-sm font-medium text-gray-700">
+                {formatCost(sessionUsage?.totalCost)}
+              </div>
+              <div className="text-xs text-gray-500">
+                {formatTokens(totalTokens)} tokens
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

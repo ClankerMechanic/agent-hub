@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { categories } from '../config/agents';
 import { PROVIDERS } from '../config/models';
 
-const defaultEmojis = ['🤖', '💡', '⚡', '🎨', '📚', '🔧', '💼', '🌟', '🎯', '✨'];
+// Emoji categories for agent icons
+const emojiCategories = {
+  'AI & Tech': ['🤖', '🧠', '⚙️', '💻', '🔧', '💾', '🔌', '📡', '🛠️', '⚡'],
+  'Communication': ['💬', '✉️', '📧', '📝', '📢', '🗣️', '💭', '📮', '📞', '🔔'],
+  'Productivity': ['📊', '📈', '📋', '✅', '📅', '⏰', '🎯', '📌', '🗂️', '📁'],
+  'Creative': ['🎨', '✨', '🌟', '💡', '🎭', '🎪', '✏️', '🖌️', '🎬', '📸'],
+  'Knowledge': ['📚', '🔍', '🎓', '🔬', '🧪', '📖', '💼', '🏆', '🌐', '🗺️'],
+  'Nature & More': ['🌱', '🌿', '🔥', '💧', '🌈', '☀️', '🌙', '⭐', '🍀', '🌸']
+};
 
 // Inner form component that resets when key changes
 function AgentForm({ editAgent, onSave, onClose }) {
@@ -35,24 +43,34 @@ function AgentForm({ editAgent, onSave, onClose }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
           Icon
         </label>
-        <div className="flex gap-2 flex-wrap">
-          {defaultEmojis.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => setIcon(emoji)}
-              className={`w-10 h-10 text-xl rounded-lg border-2 transition-colors ${
-                icon === emoji
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              {emoji}
-            </button>
+        <div className="space-y-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
+          {Object.entries(emojiCategories).map(([categoryName, emojis]) => (
+            <div key={categoryName}>
+              <p className="text-xs text-gray-500 mb-1">{categoryName}</p>
+              <div className="flex gap-1 flex-wrap">
+                {emojis.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setIcon(emoji)}
+                    className={`w-8 h-8 text-lg rounded-md border-2 transition-colors ${
+                      icon === emoji
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-transparent hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs text-gray-500">Custom:</span>
           <input
             type="text"
             value={icon}

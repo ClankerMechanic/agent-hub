@@ -12,7 +12,10 @@ export function MainContent({
   onSendMessage,
   onUpdatePrompt,
   onStartGenericChat,
-  sessionUsage
+  sessionUsage,
+  selectedModel,
+  onModelChange,
+  apiKeys
 }) {
   // No agent selected - show welcome state with generic chat option
   if (!agent) {
@@ -44,7 +47,13 @@ export function MainContent({
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Agent Header */}
-      <AgentHeader agent={agent} sessionUsage={sessionUsage} />
+      <AgentHeader
+        agent={agent}
+        sessionUsage={sessionUsage}
+        selectedModel={selectedModel}
+        onModelChange={onModelChange}
+        apiKeys={apiKeys}
+      />
 
       {/* Editable Prompt */}
       <EditablePrompt
