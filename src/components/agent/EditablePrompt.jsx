@@ -14,22 +14,32 @@ export function EditablePrompt({ prompt, expanded, onToggle, onUpdate, isCustom 
     setIsEditing(false);
   };
 
+  // Reset edited prompt when prompt changes (e.g., switching agents)
+  if (editedPrompt !== prompt && !isEditing) {
+    setEditedPrompt(prompt);
+  }
+
   // Truncate for collapsed view
-  const truncatedPrompt = prompt.length > 100
+  const truncatedPrompt = prompt?.length > 100
     ? prompt.substring(0, 100) + '...'
-    : prompt;
+    : prompt || '(No system prompt)';
+
+  // Don't show prompt section for direct chat
+  if (!prompt && prompt !== '') {
+    return null;
+  }
 
   return (
     <div className="px-4 py-2 border-b border-gray-200 bg-gray-50/50">
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-medium text-gray-500">System Prompt</span>
         <div className="flex items-center gap-2">
-          {isCustom && expanded && !isEditing && (
+          {expanded && !isEditing && prompt && (
             <button
               onClick={() => setIsEditing(true)}
               className="text-xs text-blue-600 hover:text-blue-800"
             >
-              Edit
+              Edit {!isCustom && '(session only)'}
             </button>
           )}
           <button

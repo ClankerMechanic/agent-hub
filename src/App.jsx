@@ -13,6 +13,17 @@ const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
 const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
 const MODEL_KEY = 'agent-hub-model';
 
+// Direct chat pseudo-agent (no system prompt)
+const DIRECT_CHAT_AGENT = {
+  id: 'direct-chat',
+  name: 'Direct Chat',
+  description: 'Chat directly with Claude without a system prompt',
+  icon: '💬',
+  category: 'General',
+  systemPrompt: '',
+  isDirectChat: true
+};
+
 function App() {
   // Core state
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE_KEY) || '');
@@ -41,15 +52,22 @@ function App() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
+  const [promptOverrides, setPromptOverrides] = useState({}); // Temp prompt edits for built-in agents
 
   // Combine built-in and custom agents
   const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
 
-  // Get selected agent object
-  const selectedAgent = useMemo(() =>
-    allAgents.find(a => a.id === selectedAgentId) || null,
-    [allAgents, selectedAgentId]
-  );
+  // Get selected agent object (including direct chat and prompt overrides)
+  const selectedAgent = useMemo(() => {
+    if (selectedAgentId === 'direct-chat') return DIRECT_CHAT_AGENT;
+    const agent = allAgents.find(a => a.id === selectedAgentId);
+    if (!agent) return null;
+    // Apply prompt override if exists
+    if (promptOverrides[selectedAgentId]) {
+      return { ...agent, systemPrompt: promptOverrides[selectedAgentId] };
+    }
+    return agent;
+  }, [allAgents, selectedAgentId, promptOverrides]);
 
   // Persist to localStorage
   useEffect(() => {
@@ -179,10 +197,18 @@ function App() {
   };
 
   const handleUpdatePrompt = (newPrompt) => {
-    if (!selectedAgent?.isCustom) return;
-    setCustomAgents(prev =>
-      prev.map(a => a.id === selectedAgentId ? { ...a, systemPrompt: newPrompt } : a)
-    );
+    if (selectedAgent?.isCustom) {
+      // Persist changes for custom agents
+      setCustomAgents(prev =>
+        prev.map(a => a.id === selectedAgentId ? { ...a, systemPrompt: newPrompt } : a)
+      );
+    } else {
+      // Store temporary override for built-in agents
+      setPromptOverrides(prev => ({
+        ...prev,
+        [selectedAgentId]: newPrompt
+      }));
+    }
   };
 
   // Show settings if no API key
@@ -193,6 +219,12 @@ function App() {
   return (
     <>
       <AppLayout
+        onHomeClick={() => {
+          setSelectedAgentId(null);
+          setActiveChatId(null);
+          setCurrentMessages([]);
+        }}
+        onSettingsClick={() => setShowSettings(true)}
         leftSidebar={
           <LeftSidebar
             onNewChat={handleNewChat}
@@ -213,6 +245,7 @@ function App() {
             onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
             onSendMessage={handleSendMessage}
             onUpdatePrompt={handleUpdatePrompt}
+            onStartDirectChat={() => setSelectedAgentId('direct-chat')}
           />
         }
         rightSidebar={
