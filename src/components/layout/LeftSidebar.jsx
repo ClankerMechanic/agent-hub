@@ -10,13 +10,9 @@ export function LeftSidebar({
   onSelectChat,
   agents
 }) {
-  // Filter history by agent if one is selected
-  const filteredSessions = selectedAgentId
-    ? Object.values(chatSessions).filter(s => s.agentId === selectedAgentId)
-    : Object.values(chatSessions);
-
-  // Sort by most recent
-  const sortedSessions = [...filteredSessions].sort((a, b) => b.createdAt - a.createdAt);
+  // Show all sessions, sorted by most recent
+  const allSessions = Object.values(chatSessions);
+  const sortedSessions = [...allSessions].sort((a, b) => b.createdAt - a.createdAt);
 
   return (
     <div className="flex flex-col h-full">
@@ -29,7 +25,6 @@ export function LeftSidebar({
         activeChatId={activeChatId}
         onSelectChat={onSelectChat}
         agents={agents}
-        isFiltered={!!selectedAgentId}
       />
     </div>
   );

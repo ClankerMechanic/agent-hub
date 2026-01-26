@@ -31,9 +31,14 @@ export function ChatHistoryItem({ session, isActive, onClick, agent }) {
           <p className="text-sm text-gray-900 truncate">
             {preview}...
           </p>
-          <p className="text-xs text-gray-500">
-            {formatRelativeTime(session.createdAt)}
-          </p>
+          <div className="flex items-center justify-between mt-0.5">
+            <p className="text-xs text-gray-500">
+              {formatRelativeTime(session.createdAt)}
+            </p>
+            <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded truncate max-w-[80px]">
+              {agent?.name || 'Generic'}
+            </span>
+          </div>
         </div>
       </div>
     </button>
