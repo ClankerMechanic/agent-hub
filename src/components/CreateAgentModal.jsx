@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { categories } from '../config/agents';
+import { PROVIDERS } from '../config/models';
 
 const defaultEmojis = ['🤖', '💡', '⚡', '🎨', '📚', '🔧', '💼', '🌟', '🎯', '✨'];
 
@@ -10,6 +11,7 @@ function AgentForm({ editAgent, onSave, onClose }) {
   const [systemPrompt, setSystemPrompt] = useState(editAgent?.systemPrompt || '');
   const [category, setCategory] = useState(editAgent?.category || 'Custom');
   const [icon, setIcon] = useState(editAgent?.icon || '🤖');
+  const [preferredModel, setPreferredModel] = useState(editAgent?.preferredModel || '');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -22,7 +24,8 @@ function AgentForm({ editAgent, onSave, onClose }) {
       systemPrompt: systemPrompt.trim(),
       category,
       icon,
-      isCustom: true
+      isCustom: true,
+      preferredModel: preferredModel || undefined // Only set if not using global
     };
 
     onSave(agent);
@@ -100,6 +103,31 @@ function AgentForm({ editAgent, onSave, onClose }) {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Preferred Model
+        </label>
+        <select
+          value={preferredModel}
+          onChange={(e) => setPreferredModel(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+        >
+          <option value="">Use Global Setting</option>
+          {Object.entries(PROVIDERS).map(([providerId, provider]) => (
+            <optgroup key={providerId} label={provider.name}>
+              {provider.models.map(model => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          Override the global model for this agent, or leave as "Use Global Setting".
+        </p>
       </div>
 
       <div>

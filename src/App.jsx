@@ -343,6 +343,7 @@ function App() {
             onSendMessage={handleSendMessage}
             onUpdatePrompt={handleUpdatePrompt}
             onStartGenericChat={() => setSelectedAgentId('generic-chat')}
+            sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
           />
         }
         rightSidebar={
