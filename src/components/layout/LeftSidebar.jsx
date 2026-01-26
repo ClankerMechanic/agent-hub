@@ -8,7 +8,10 @@ export function LeftSidebar({
   selectedAgentId,
   activeChatId,
   onSelectChat,
-  agents
+  agents,
+  onGitHubClick,
+  githubEnabled,
+  syncStatus
 }) {
   // Show all sessions, sorted by most recent
   const allSessions = Object.values(chatSessions);
@@ -19,6 +22,9 @@ export function LeftSidebar({
       <OptionsPanel
         onNewChat={onNewChat}
         onSettingsClick={onSettingsClick}
+        onGitHubClick={onGitHubClick}
+        githubEnabled={githubEnabled}
+        syncStatus={syncStatus}
       />
       <HistoryList
         sessions={sortedSessions}

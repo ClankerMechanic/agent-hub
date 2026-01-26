@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export function EditablePrompt({ prompt, expanded, onToggle, onUpdate, isCustom }) {
+export function EditablePrompt({ prompt, expanded, onToggle, onUpdate, isCustom, githubEnabled, onShowVersionHistory }) {
   const [editedPrompt, setEditedPrompt] = useState(prompt);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -34,6 +34,18 @@ export function EditablePrompt({ prompt, expanded, onToggle, onUpdate, isCustom 
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-medium text-gray-500">System Prompt</span>
         <div className="flex items-center gap-2">
+          {githubEnabled && isCustom && (
+            <button
+              onClick={onShowVersionHistory}
+              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              title="View version history"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              History
+            </button>
+          )}
           {expanded && !isEditing && prompt && (
             <button
               onClick={() => setIsEditing(true)}

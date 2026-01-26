@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
 import { CreateAgentModal } from './components/CreateAgentModal';
+import { GitHubSettings } from './components/GitHubSettings';
+import { VersionHistory } from './components/VersionHistory';
 import { AppLayout } from './components/layout/AppLayout';
 import { LeftSidebar } from './components/layout/LeftSidebar';
 import { RightSidebar } from './components/layout/RightSidebar';
@@ -8,6 +10,14 @@ import { MainContent } from './components/layout/MainContent';
 import { sendMessage } from './services/llm';
 import { getModelConfig, getProviderForModel } from './config/models';
 import { agents as builtInAgents } from './config/agents';
+import {
+  loadGitHubConfig,
+  saveGitHubConfig,
+  isGitHubConfigured,
+  listAgents as listGitHubAgents,
+  saveAgent as saveAgentToGitHub,
+  SYNC_STATUS
+} from './services/github';
 
 const API_KEYS_STORAGE_KEY = 'agent-hub-api-keys';
 const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
@@ -82,6 +92,13 @@ function App() {
   const [editingAgent, setEditingAgent] = useState(null);
   const [promptOverrides, setPromptOverrides] = useState({}); // Temp prompt edits for built-in agents
 
+  // GitHub sync state
+  const [githubConfig, setGithubConfig] = useState(() => loadGitHubConfig());
+  const [showGitHubSettings, setShowGitHubSettings] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(SYNC_STATUS.IDLE);
+  const [pendingSync, setPendingSync] = useState([]); // Queue for offline changes
+
   // Combine built-in and custom agents
   const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
 
@@ -126,6 +143,47 @@ function App() {
       setCurrentMessages([]);
     }
   }, [activeChatId, chatSessions]);
+
+  // GitHub: Sync agents from GitHub on load
+  useEffect(() => {
+    const syncFromGitHub = async () => {
+      if (!isGitHubConfigured(githubConfig)) return;
+
+      setSyncStatus(SYNC_STATUS.SYNCING);
+      try {
+        const result = await listGitHubAgents(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          githubConfig.agentsPath
+        );
+
+        if (result.success && result.agents.length > 0) {
+          // Merge with local custom agents (GitHub is source of truth)
+          const githubAgentIds = new Set(result.agents.map(a => a.id));
+          const localOnlyAgents = customAgents.filter(a => !githubAgentIds.has(a.id));
+
+          // Mark GitHub agents with sync metadata
+          const syncedAgents = result.agents.map(a => ({
+            ...a,
+            isCustom: true,
+            syncedFromGitHub: true,
+            lastSynced: Date.now()
+          }));
+
+          setCustomAgents([...syncedAgents, ...localOnlyAgents]);
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        } else {
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        }
+      } catch (error) {
+        console.error('GitHub sync failed:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+      }
+    };
+
+    syncFromGitHub();
+  }, [githubConfig.enabled, githubConfig.token, githubConfig.owner, githubConfig.repo]);
 
   // Handlers
   const handleSaveApiKeys = (keys) => {
@@ -283,7 +341,8 @@ function App() {
     }
   };
 
-  const handleSaveCustomAgent = (agent) => {
+  const handleSaveCustomAgent = async (agent) => {
+    // Save locally first
     if (editingAgent) {
       setCustomAgents(prev => prev.map(a => a.id === agent.id ? agent : a));
     } else {
@@ -291,14 +350,64 @@ function App() {
     }
     setEditingAgent(null);
     setShowCreateModal(false);
+
+    // Sync to GitHub if configured
+    if (isGitHubConfigured(githubConfig)) {
+      try {
+        setSyncStatus(SYNC_STATUS.SYNCING);
+        const message = editingAgent
+          ? `Update agent: ${agent.name}`
+          : `Create agent: ${agent.name}`;
+
+        await saveAgentToGitHub(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          agent,
+          message,
+          githubConfig.agentsPath
+        );
+        setSyncStatus(SYNC_STATUS.SUCCESS);
+      } catch (error) {
+        console.error('Failed to sync to GitHub:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+        // Queue for later sync
+        setPendingSync(prev => [...prev, { type: 'save', agent }]);
+      }
+    }
   };
 
-  const handleUpdatePrompt = (newPrompt) => {
+  const handleGitHubConfigChange = (config) => {
+    setGithubConfig(config);
+    saveGitHubConfig(config);
+  };
+
+  const handleUpdatePrompt = async (newPrompt) => {
     if (selectedAgent?.isCustom) {
       // Persist changes for custom agents
+      const updatedAgent = { ...selectedAgent, systemPrompt: newPrompt };
       setCustomAgents(prev =>
-        prev.map(a => a.id === selectedAgentId ? { ...a, systemPrompt: newPrompt } : a)
+        prev.map(a => a.id === selectedAgentId ? updatedAgent : a)
       );
+
+      // Sync to GitHub if configured
+      if (isGitHubConfigured(githubConfig)) {
+        try {
+          setSyncStatus(SYNC_STATUS.SYNCING);
+          await saveAgentToGitHub(
+            githubConfig.token,
+            githubConfig.owner,
+            githubConfig.repo,
+            updatedAgent,
+            `Update prompt for ${updatedAgent.name}`,
+            githubConfig.agentsPath
+          );
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        } catch (error) {
+          console.error('Failed to sync to GitHub:', error);
+          setSyncStatus(SYNC_STATUS.ERROR);
+        }
+      }
     } else {
       // Store temporary override for built-in agents
       setPromptOverrides(prev => ({
@@ -306,6 +415,55 @@ function App() {
         [selectedAgentId]: newPrompt
       }));
     }
+  };
+
+  const handleRevertVersion = async (versionContent) => {
+    if (!selectedAgent) return;
+
+    // Create updated agent from version content
+    const updatedAgent = {
+      ...selectedAgent,
+      ...versionContent,
+      id: selectedAgent.id // Keep the same ID
+    };
+
+    setCustomAgents(prev =>
+      prev.map(a => a.id === selectedAgent.id ? updatedAgent : a)
+    );
+
+    // Sync to GitHub
+    if (isGitHubConfigured(githubConfig)) {
+      try {
+        setSyncStatus(SYNC_STATUS.SYNCING);
+        await saveAgentToGitHub(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          updatedAgent,
+          `Revert ${updatedAgent.name} to previous version`,
+          githubConfig.agentsPath
+        );
+        setSyncStatus(SYNC_STATUS.SUCCESS);
+      } catch (error) {
+        console.error('Failed to sync revert to GitHub:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+      }
+    }
+  };
+
+  const handleForkVersion = (versionContent) => {
+    // Create a new agent based on the old version
+    const newAgent = {
+      ...versionContent,
+      id: `custom-${Date.now()}`,
+      name: `${versionContent.name} (Fork)`,
+      isCustom: true
+    };
+
+    setEditingAgent(null);
+    setShowCreateModal(true);
+    // Pre-populate the modal with the forked content
+    setEditingAgent(newAgent);
   };
 
   // Show settings if no API keys configured
@@ -331,6 +489,9 @@ function App() {
             activeChatId={activeChatId}
             onSelectChat={handleSelectChat}
             agents={allAgents}
+            onGitHubClick={() => setShowGitHubSettings(true)}
+            githubEnabled={isGitHubConfigured(githubConfig)}
+            syncStatus={syncStatus}
           />
         }
         mainContent={
@@ -347,6 +508,8 @@ function App() {
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             apiKeys={apiKeys}
+            githubEnabled={isGitHubConfigured(githubConfig)}
+            onShowVersionHistory={() => setShowVersionHistory(true)}
           />
         }
         rightSidebar={
@@ -375,6 +538,22 @@ function App() {
         }}
         onSave={handleSaveCustomAgent}
         editAgent={editingAgent}
+      />
+
+      <GitHubSettings
+        config={githubConfig}
+        onConfigChange={handleGitHubConfigChange}
+        onClose={() => setShowGitHubSettings(false)}
+        isOpen={showGitHubSettings}
+      />
+
+      <VersionHistory
+        isOpen={showVersionHistory}
+        onClose={() => setShowVersionHistory(false)}
+        agent={selectedAgent}
+        githubConfig={githubConfig}
+        onRevert={handleRevertVersion}
+        onFork={handleForkVersion}
       />
     </>
   );

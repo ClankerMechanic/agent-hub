@@ -15,7 +15,9 @@ export function MainContent({
   sessionUsage,
   selectedModel,
   onModelChange,
-  apiKeys
+  apiKeys,
+  githubEnabled,
+  onShowVersionHistory
 }) {
   // No agent selected - show welcome state with generic chat option
   if (!agent) {
@@ -62,6 +64,8 @@ export function MainContent({
         onToggle={onTogglePrompt}
         onUpdate={onUpdatePrompt}
         isCustom={agent.isCustom}
+        githubEnabled={githubEnabled}
+        onShowVersionHistory={onShowVersionHistory}
       />
 
       {/* Chat Window */}
