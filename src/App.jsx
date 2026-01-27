@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
 import { CreateAgentModal } from './components/CreateAgentModal';
 import { CreateProjectModal } from './components/CreateProjectModal';
+import { ProjectView } from './components/ProjectView';
 import { GitHubSettings } from './components/GitHubSettings';
 import { VersionHistory } from './components/VersionHistory';
 import { AppLayout } from './components/layout/AppLayout';
@@ -316,6 +317,7 @@ function App() {
             [chatId]: {
               id: chatId,
               agentId: selectedAgentId,
+              projectId: existingSession?.projectId || activeProjectId || null,
               createdAt: existingSession?.createdAt || Date.now(),
               messages: updatedMessages,
               totalUsage: result.usage ? {
@@ -525,12 +527,7 @@ function App() {
     const project = projects.find(p => p.id === projectId);
     if (project) {
       setActiveProjectId(projectId);
-      // Load associated agent if any
-      if (project.agentId) {
-        setSelectedAgentId(project.agentId);
-      } else {
-        setSelectedAgentId('general-chat');
-      }
+      setSelectedAgentId(null); // Don't select an agent yet, show project view
       setActiveChatId(null);
       setCurrentMessages([]);
     }
@@ -542,6 +539,25 @@ function App() {
       setActiveProjectId(null);
     }
   };
+
+  const handleStartProjectChat = (agentId, initialMessage, projectId) => {
+    // Set the agent and project context
+    setSelectedAgentId(agentId);
+    // activeProjectId is already set, but make sure it stays set
+    setActiveProjectId(projectId);
+    // Send the message after state updates
+    setTimeout(() => handleSendMessage(initialMessage), 0);
+  };
+
+  const handleBackFromProject = () => {
+    setActiveProjectId(null);
+    setSelectedAgentId(null);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+  };
+
+  // Get active project
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
   // Show settings if no API keys configured
   if (showSettings) {
@@ -577,33 +593,47 @@ function App() {
           />
         }
         mainContent={
-          <MainContent
-            agent={selectedAgent}
-            messages={currentMessages}
-            isLoading={isLoading}
-            promptExpanded={promptExpanded}
-            onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
-            onSendMessage={handleSendMessage}
-            onUpdatePrompt={handleUpdatePrompt}
-            onStartGeneralChat={(initialMessage) => {
-              setSelectedAgentId('general-chat');
-              // If there's an initial message, send it after switching
-              if (initialMessage) {
-                setTimeout(() => handleSendMessage(initialMessage), 0);
-              }
-            }}
-            sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
-            apiKeys={apiKeys}
-            githubEnabled={isGitHubConfigured(githubConfig)}
-            onShowVersionHistory={() => setShowVersionHistory(true)}
-            onClose={() => {
-              setSelectedAgentId(null);
-              setActiveChatId(null);
-              setCurrentMessages([]);
-            }}
-          />
+          activeProject && !selectedAgent ? (
+            <ProjectView
+              project={activeProject}
+              agents={[GENERAL_CHAT_AGENT, ...allAgents]}
+              chatSessions={chatSessions}
+              onSelectAgent={handleSelectAgent}
+              onStartChat={handleStartProjectChat}
+              onSelectChat={handleSelectChat}
+              onBack={handleBackFromProject}
+            />
+          ) : (
+            <MainContent
+              agent={selectedAgent}
+              messages={currentMessages}
+              isLoading={isLoading}
+              promptExpanded={promptExpanded}
+              onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
+              onSendMessage={handleSendMessage}
+              onUpdatePrompt={handleUpdatePrompt}
+              onStartGeneralChat={(initialMessage) => {
+                setSelectedAgentId('general-chat');
+                // If there's an initial message, send it after switching
+                if (initialMessage) {
+                  setTimeout(() => handleSendMessage(initialMessage), 0);
+                }
+              }}
+              sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              apiKeys={apiKeys}
+              githubEnabled={isGitHubConfigured(githubConfig)}
+              onShowVersionHistory={() => setShowVersionHistory(true)}
+              onClose={() => {
+                setSelectedAgentId(null);
+                setActiveChatId(null);
+                setCurrentMessages([]);
+                setActiveProjectId(null);
+              }}
+              activeProject={activeProject}
+            />
+          )
         }
         rightSidebar={
           <RightSidebar
