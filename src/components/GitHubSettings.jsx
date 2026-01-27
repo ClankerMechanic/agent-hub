@@ -62,7 +62,12 @@ export function GitHubSettings({ config, onConfigChange, onClose, isOpen }) {
 
       if (!dirResult.success) {
         setTestStatus('error');
-        setTestMessage(`Failed to create agents directory: ${dirResult.error}`);
+        // Provide helpful message for empty repo error
+        if (dirResult.error?.includes('empty')) {
+          setTestMessage('Repository is empty. Please add a README to your repo on GitHub first, then try again.');
+        } else {
+          setTestMessage(`Failed to create agents directory: ${dirResult.error}`);
+        }
         return;
       }
 
@@ -118,6 +123,20 @@ export function GitHubSettings({ config, onConfigChange, onClose, isOpen }) {
 
             {localConfig.enabled && (
               <>
+                {/* Setup Instructions */}
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                  <p className="font-medium text-blue-900 mb-2">Setup Instructions:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-blue-800">
+                    <li>Create a new repo on GitHub (e.g., "AI-Prompts")</li>
+                    <li>
+                      <span className="font-medium">Important:</span> Click "Add a README" when creating the repo
+                      <span className="text-blue-600 text-xs ml-1">(required for empty repos)</span>
+                    </li>
+                    <li>Create a Fine-grained Personal Access Token with "Contents: Read & Write" permission</li>
+                    <li>Enter your details below and test the connection</li>
+                  </ol>
+                </div>
+
                 {/* Token */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
