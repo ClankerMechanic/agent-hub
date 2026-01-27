@@ -31,7 +31,7 @@ export const DEFAULT_GITHUB_CONFIG = {
   owner: '',
   repo: '',
   branch: 'main',
-  agentsPath: 'agents'
+  agentsPath: 'agent-hub'
 };
 
 /**
