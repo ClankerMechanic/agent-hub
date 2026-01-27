@@ -409,11 +409,47 @@ function App() {
         }
       }
     } else {
-      // Store temporary override for built-in agents
-      setPromptOverrides(prev => ({
-        ...prev,
-        [selectedAgentId]: newPrompt
-      }));
+      // Fork built-in agent as a custom agent
+      const forkedAgent = {
+        ...selectedAgent,
+        id: `${selectedAgent.id}-custom-${Date.now()}`,
+        name: `${selectedAgent.name} (Custom)`,
+        systemPrompt: newPrompt,
+        isCustom: true,
+        forkedFrom: selectedAgent.id,
+        originalPrompt: selectedAgent.systemPrompt
+      };
+
+      // Add to custom agents
+      setCustomAgents(prev => [...prev, forkedAgent]);
+
+      // Switch to the forked agent
+      setSelectedAgentId(forkedAgent.id);
+
+      // Clear any prompt overrides for the original
+      setPromptOverrides(prev => {
+        const { [selectedAgentId]: _, ...rest } = prev;
+        return rest;
+      });
+
+      // Sync to GitHub if configured
+      if (isGitHubConfigured(githubConfig)) {
+        try {
+          setSyncStatus(SYNC_STATUS.SYNCING);
+          await saveAgentToGitHub(
+            githubConfig.token,
+            githubConfig.owner,
+            githubConfig.repo,
+            forkedAgent,
+            `Fork ${selectedAgent.name} as custom agent`,
+            githubConfig.agentsPath
+          );
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        } catch (error) {
+          console.error('Failed to sync to GitHub:', error);
+          setSyncStatus(SYNC_STATUS.ERROR);
+        }
+      }
     }
   };
 
@@ -503,7 +539,13 @@ function App() {
             onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
             onSendMessage={handleSendMessage}
             onUpdatePrompt={handleUpdatePrompt}
-            onStartGeneralChat={() => setSelectedAgentId('general-chat')}
+            onStartGeneralChat={(initialMessage) => {
+              setSelectedAgentId('general-chat');
+              // If there's an initial message, send it after switching
+              if (initialMessage) {
+                setTimeout(() => handleSendMessage(initialMessage), 0);
+              }
+            }}
             sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}

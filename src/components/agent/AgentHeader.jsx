@@ -51,12 +51,17 @@ export function AgentHeader({ agent, sessionUsage, selectedModel, onModelChange,
               className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer min-w-[140px]"
             >
               {Object.entries(PROVIDERS).map(([providerId, provider]) => {
-                if (!apiKeys[providerId]) return null;
+                const hasKey = !!apiKeys[providerId];
                 return (
-                  <optgroup key={providerId} label={provider.name}>
+                  <optgroup key={providerId} label={`${provider.name}${!hasKey ? ' (no API key)' : ''}`}>
                     {provider.models.map(model => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
+                      <option
+                        key={model.id}
+                        value={model.id}
+                        disabled={!hasKey}
+                        className={!hasKey ? 'text-gray-400' : ''}
+                      >
+                        {model.name}{!hasKey ? ' - requires API key' : ''}
                       </option>
                     ))}
                   </optgroup>
