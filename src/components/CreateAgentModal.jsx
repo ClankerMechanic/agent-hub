@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { categories } from '../config/agents';
 import { PROVIDERS } from '../config/models';
+import { executeAgent } from '../services/llm';
+
+// System prompt for generating agent prompts
+const PROMPT_GENERATOR_SYSTEM = `You are an expert at creating effective system prompts for AI assistants.
+When given a description of what an agent should do, you generate a well-structured system prompt.
+
+Your generated prompts should:
+- Be clear and specific about the agent's role and capabilities
+- Include guidelines for tone and communication style
+- Specify how to handle edge cases or unclear requests
+- Be concise but comprehensive (typically 100-300 words)
+
+Respond ONLY with the system prompt text, no explanations or markdown formatting.`;
 
 // Emoji categories for agent icons
 const emojiCategories = {
@@ -13,13 +26,50 @@ const emojiCategories = {
 };
 
 // Inner form component that resets when key changes
-function AgentForm({ editAgent, onSave, onClose }) {
+function AgentForm({ editAgent, onSave, onClose, apiKeys, selectedModel }) {
   const [name, setName] = useState(editAgent?.name || '');
   const [description, setDescription] = useState(editAgent?.description || '');
   const [systemPrompt, setSystemPrompt] = useState(editAgent?.systemPrompt || '');
   const [category, setCategory] = useState(editAgent?.category || 'Custom');
   const [icon, setIcon] = useState(editAgent?.icon || '🤖');
   const [preferredModel, setPreferredModel] = useState(editAgent?.preferredModel || '');
+
+  // AI generation state
+  const [showAiGenerator, setShowAiGenerator] = useState(false);
+  const [aiPromptDescription, setAiPromptDescription] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState('');
+
+  // Check if any API key is configured
+  const hasApiKey = apiKeys && Object.values(apiKeys).some(key => key && key.trim());
+
+  const handleGeneratePrompt = async () => {
+    if (!aiPromptDescription.trim() || !hasApiKey) return;
+
+    setIsGenerating(true);
+    setGenerateError('');
+
+    try {
+      const result = await executeAgent(
+        PROMPT_GENERATOR_SYSTEM,
+        `Create a system prompt for an AI agent that: ${aiPromptDescription}`,
+        apiKeys,
+        selectedModel
+      );
+
+      if (result.success) {
+        setSystemPrompt(result.content);
+        setShowAiGenerator(false);
+        setAiPromptDescription('');
+      } else {
+        setGenerateError(result.error || 'Failed to generate prompt');
+      }
+    } catch (err) {
+      setGenerateError(err.message || 'Failed to generate prompt');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -149,9 +199,62 @@ function AgentForm({ editAgent, onSave, onClose }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          System Prompt *
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-gray-700">
+            System Prompt *
+          </label>
+          {hasApiKey && (
+            <button
+              type="button"
+              onClick={() => setShowAiGenerator(!showAiGenerator)}
+              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {showAiGenerator ? 'Hide AI Generator' : 'Generate with AI'}
+            </button>
+          )}
+        </div>
+
+        {/* AI Generator Panel */}
+        {showAiGenerator && (
+          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800 mb-2">
+              Describe what you want your agent to do, and AI will generate a system prompt for you.
+            </p>
+            <textarea
+              value={aiPromptDescription}
+              onChange={(e) => setAiPromptDescription(e.target.value)}
+              placeholder="e.g., Help users write professional emails, suggest improvements, and fix grammar mistakes"
+              rows={2}
+              className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none text-sm"
+              disabled={isGenerating}
+            />
+            {generateError && (
+              <p className="mt-1 text-xs text-red-600">{generateError}</p>
+            )}
+            <button
+              type="button"
+              onClick={handleGeneratePrompt}
+              disabled={!aiPromptDescription.trim() || isGenerating}
+              className="mt-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Generating...
+                </>
+              ) : (
+                'Generate Prompt'
+              )}
+            </button>
+          </div>
+        )}
+
         <textarea
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
@@ -185,7 +288,7 @@ function AgentForm({ editAgent, onSave, onClose }) {
   );
 }
 
-export function CreateAgentModal({ isOpen, onClose, onSave, editAgent = null }) {
+export function CreateAgentModal({ isOpen, onClose, onSave, editAgent = null, apiKeys = {}, selectedModel = '' }) {
   if (!isOpen) return null;
 
   // Use key to reset form state when switching between create/edit modes
@@ -214,6 +317,8 @@ export function CreateAgentModal({ isOpen, onClose, onSave, editAgent = null }) 
             editAgent={editAgent}
             onSave={onSave}
             onClose={onClose}
+            apiKeys={apiKeys}
+            selectedModel={selectedModel}
           />
         </div>
       </div>

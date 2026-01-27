@@ -626,6 +626,8 @@ function App() {
         }}
         onSave={handleSaveCustomAgent}
         editAgent={editingAgent}
+        apiKeys={apiKeys}
+        selectedModel={selectedModel}
       />
 
       <GitHubSettings
