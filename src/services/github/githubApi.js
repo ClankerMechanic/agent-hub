@@ -126,8 +126,8 @@ export async function saveAgent(token, owner, repo, agent, message, path = 'agen
 
     const body = {
       message: message || `Update ${agent.name}`,
-      content,
-      branch: 'main'
+      content
+      // Don't specify branch - GitHub uses default, works with empty repos
     };
 
     if (existingSha) {
@@ -168,8 +168,7 @@ export async function deleteAgent(token, owner, repo, agentId, path = 'agents') 
         method: 'DELETE',
         body: JSON.stringify({
           message: `Delete agent ${agentId}`,
-          sha: existing.sha,
-          branch: 'main'
+          sha: existing.sha
         })
       }
     );
@@ -246,8 +245,8 @@ export async function ensureAgentsDirectory(token, owner, repo, path = 'agents')
           method: 'PUT',
           body: JSON.stringify({
             message: 'Initialize agents directory',
-            content: btoa(readme),
-            branch: 'main'
+            content: btoa(readme)
+            // Don't specify branch - GitHub creates default branch for empty repos
           })
         }
       );
