@@ -12,8 +12,9 @@ export function ProjectView({
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [chatInput, setChatInput] = useState('');
 
-  // Get agents for this project
-  const projectAgents = project.agentIds
+  // Get agents for this project (handle both old agentId and new agentIds format)
+  const agentIds = project.agentIds || (project.agentId ? [project.agentId] : []);
+  const projectAgents = agentIds
     .map(id => agents.find(a => a.id === id))
     .filter(Boolean);
 
