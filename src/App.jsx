@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
 import { CreateAgentModal } from './components/CreateAgentModal';
+import { CreateProjectModal } from './components/CreateProjectModal';
 import { GitHubSettings } from './components/GitHubSettings';
 import { VersionHistory } from './components/VersionHistory';
 import { AppLayout } from './components/layout/AppLayout';
@@ -24,6 +25,7 @@ const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
 const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
 const MODEL_KEY = 'agent-hub-model';
 const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
+const PROJECTS_KEY = 'agent-hub-projects';
 
 // General chat pseudo-agent (no system prompt)
 const GENERAL_CHAT_AGENT = {
@@ -99,6 +101,14 @@ function App() {
   const [syncStatus, setSyncStatus] = useState(SYNC_STATUS.IDLE);
   const [pendingSync, setPendingSync] = useState([]); // Queue for offline changes
 
+  // Projects state
+  const [projects, setProjects] = useState(() => {
+    const stored = localStorage.getItem(PROJECTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+
   // Combine built-in and custom agents
   const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
 
@@ -134,6 +144,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(MODEL_KEY, selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }, [projects]);
 
   // Load messages when chat session changes
   useEffect(() => {
@@ -502,6 +516,33 @@ function App() {
     setEditingAgent(newAgent);
   };
 
+  // Project handlers
+  const handleCreateProject = (project) => {
+    setProjects(prev => [...prev, project]);
+  };
+
+  const handleSelectProject = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setActiveProjectId(projectId);
+      // Load associated agent if any
+      if (project.agentId) {
+        setSelectedAgentId(project.agentId);
+      } else {
+        setSelectedAgentId('general-chat');
+      }
+      setActiveChatId(null);
+      setCurrentMessages([]);
+    }
+  };
+
+  const handleDeleteProject = (projectId) => {
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+    if (activeProjectId === projectId) {
+      setActiveProjectId(null);
+    }
+  };
+
   // Show settings if no API keys configured
   if (showSettings) {
     return <Settings onSave={handleSaveApiKeys} initialApiKeys={apiKeys} />;
@@ -528,6 +569,11 @@ function App() {
             onGitHubClick={() => setShowGitHubSettings(true)}
             githubEnabled={isGitHubConfigured(githubConfig)}
             syncStatus={syncStatus}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onSelectProject={handleSelectProject}
+            onCreateProject={() => setShowCreateProject(true)}
+            onDeleteProject={handleDeleteProject}
           />
         }
         mainContent={
@@ -596,6 +642,13 @@ function App() {
         githubConfig={githubConfig}
         onRevert={handleRevertVersion}
         onFork={handleForkVersion}
+      />
+
+      <CreateProjectModal
+        isOpen={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onSave={handleCreateProject}
+        agents={allAgents}
       />
     </>
   );
