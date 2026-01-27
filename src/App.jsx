@@ -27,6 +27,7 @@ const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
 const MODEL_KEY = 'agent-hub-model';
 const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
 const PROJECTS_KEY = 'agent-hub-projects';
+const PROJECT_PROMPTS_KEY = 'agent-hub-project-prompts';
 
 // General chat pseudo-agent (no system prompt)
 const GENERAL_CHAT_AGENT = {
@@ -109,6 +110,10 @@ function App() {
   });
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [showCreateProject, setShowCreateProject] = useState(false);
+  const [projectPromptOverrides, setProjectPromptOverrides] = useState(() => {
+    const stored = localStorage.getItem(PROJECT_PROMPTS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  });
 
   // Combine built-in and custom agents
   const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
@@ -149,6 +154,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
   }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_PROMPTS_KEY, JSON.stringify(projectPromptOverrides));
+  }, [projectPromptOverrides]);
 
   // Load messages when chat session changes
   useEffect(() => {
@@ -272,10 +281,19 @@ function App() {
         options.thinkingBudget = llmSettings.thinkingBudget;
       }
 
+      // Get system prompt (check for project-specific override)
+      let systemPrompt = selectedAgent.systemPrompt;
+      if (activeProjectId && selectedAgentId) {
+        const overrideKey = `${activeProjectId}:${selectedAgentId}`;
+        if (projectPromptOverrides[overrideKey]) {
+          systemPrompt = projectPromptOverrides[overrideKey];
+        }
+      }
+
       // Call API
       const result = await sendMessage(
         apiMessages,
-        selectedAgent.systemPrompt,
+        systemPrompt,
         apiKeys,
         modelToUse,
         options
@@ -556,6 +574,31 @@ function App() {
     setCurrentMessages([]);
   };
 
+  const handleAddAgentToProject = (projectId, agentId) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      const currentAgentIds = p.agentIds || (p.agentId ? [p.agentId] : []);
+      if (currentAgentIds.includes(agentId)) return p;
+      return {
+        ...p,
+        agentIds: [...currentAgentIds, agentId],
+        updatedAt: Date.now()
+      };
+    }));
+  };
+
+  const handleUpdateProjectPrompt = (projectId, agentId, prompt) => {
+    const key = `${projectId}:${agentId}`;
+    setProjectPromptOverrides(prev => {
+      if (prompt === null) {
+        // Remove override
+        const { [key]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: prompt };
+    });
+  };
+
   // Get active project
   const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
@@ -597,11 +640,14 @@ function App() {
             <ProjectView
               project={activeProject}
               agents={[GENERAL_CHAT_AGENT, ...allAgents]}
+              allAgents={allAgents}
               chatSessions={chatSessions}
-              onSelectAgent={handleSelectAgent}
               onStartChat={handleStartProjectChat}
               onSelectChat={handleSelectChat}
               onBack={handleBackFromProject}
+              onAddAgentToProject={handleAddAgentToProject}
+              onUpdateProjectPrompt={handleUpdateProjectPrompt}
+              projectPromptOverrides={projectPromptOverrides}
             />
           ) : (
             <MainContent
