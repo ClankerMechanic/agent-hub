@@ -2,8 +2,7 @@
 node_modules/
 .npm
 
-# Build output
-dist/
+# Build output (dist is committed for VPS deployment)
 build/
 
 # Environment variables
