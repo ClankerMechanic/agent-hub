@@ -249,17 +249,44 @@ function App() {
     }
   };
 
-  const handleSendMessage = async (content) => {
-    if (!selectedAgent || !content.trim()) return;
+  const handleSendMessage = async (content, agentOverride = null, projectIdOverride = null) => {
+    const agent = agentOverride || selectedAgent;
+    if (!agent || !content.trim()) return;
 
-    // Require auth to send messages
+    // Trial message logic for non-authenticated users
+    const TRIAL_KEY = 'agent-hub-trial-used';
+    const MAX_TRIAL_LENGTH = 750;
+    let isTrialMessage = false;
+
     if (!user) {
-      setShowLoginModal(true)
-      return
+      const trialUsed = localStorage.getItem(TRIAL_KEY);
+      if (trialUsed) {
+        // Trial already used, require sign up
+        setShowLoginModal(true);
+        return;
+      }
+      // Allow trial but limit message length
+      if (content.trim().length > MAX_TRIAL_LENGTH) {
+        alert(`Trial messages are limited to ${MAX_TRIAL_LENGTH} characters. Sign up for unlimited access!`);
+        return;
+      }
+      isTrialMessage = true;
     }
 
-    // Determine which model to use (agent's preferred or global)
-    const modelToUse = selectedAgent.preferredModel || selectedModel;
+    // Determine which model to use (agent's preferred or global, force Claude for trial)
+    const modelToUse = isTrialMessage ? 'claude-sonnet-4-20250514' : (agent.preferredModel || selectedModel);
+
+    // For trial messages, use the secure edge function instead of direct API call
+    const effectiveApiKeys = apiKeys;
+
+    // Check if we have an API key for this model's provider
+    const provider = getProviderForModel(modelToUse);
+    const providerKeyMap = { anthropic: 'claude', openai: 'openai', google: 'gemini' };
+    const keyName = providerKeyMap[provider];
+    if (!effectiveApiKeys[keyName]) {
+      alert(`No API key configured for ${provider}. Go to Settings to add your API key.`);
+      return;
+    }
     const modelConfig = getModelConfig(modelToUse);
 
     const userMessage = {
@@ -281,35 +308,69 @@ function App() {
         content: m.content
       }));
 
-      // Prepare options
-      const options = {
-        temperature: llmSettings.temperature,
-        maxTokens: llmSettings.maxTokens
-      };
-
-      // Extended thinking only for supported Claude models
-      if (llmSettings.extendedThinking && modelConfig?.supportsExtendedThinking) {
-        options.extendedThinking = true;
-        options.thinkingBudget = llmSettings.thinkingBudget;
-      }
-
       // Get system prompt (check for project-specific override)
-      let systemPrompt = selectedAgent.systemPrompt;
-      if (activeProjectId && selectedAgentId) {
-        const overrideKey = `${activeProjectId}:${selectedAgentId}`;
+      const effectiveProjectId = projectIdOverride || activeProjectId;
+      let systemPrompt = agent.systemPrompt;
+      if (effectiveProjectId && agent.id) {
+        const overrideKey = `${effectiveProjectId}:${agent.id}`;
         if (projectPromptOverrides[overrideKey]) {
           systemPrompt = projectPromptOverrides[overrideKey];
         }
       }
 
-      // Call API
-      const result = await sendMessage(
-        apiMessages,
-        systemPrompt,
-        apiKeys,
-        modelToUse,
-        options
-      );
+      let result;
+
+      if (isTrialMessage) {
+        // Use secure edge function for trial messages (API key stays server-side)
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kefjklkgnfvswbflgams.supabase.co';
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/trial-message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: apiMessages,
+            systemPrompt: systemPrompt
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.error) {
+          result = { success: false, error: data.error || 'Trial message failed' };
+        } else {
+          result = {
+            success: true,
+            content: data.content,
+            usage: data.usage
+          };
+        }
+      } else {
+        // Prepare options for authenticated users
+        const options = {
+          temperature: llmSettings.temperature,
+          maxTokens: llmSettings.maxTokens
+        };
+
+        // Extended thinking only for supported Claude models
+        if (llmSettings.extendedThinking && modelConfig?.supportsExtendedThinking) {
+          options.extendedThinking = true;
+          options.thinkingBudget = llmSettings.thinkingBudget;
+        }
+
+        // Call API directly with user's keys
+        result = await sendMessage(
+          apiMessages,
+          systemPrompt,
+          effectiveApiKeys,
+          modelToUse,
+          options
+        );
+      }
+
+      // Mark trial as used after successful message
+      if (isTrialMessage) {
+        localStorage.setItem(TRIAL_KEY, 'true');
+      }
 
       if (result.success) {
         // Calculate cost if we have usage data
@@ -346,8 +407,8 @@ function App() {
             ...prev,
             [chatId]: {
               id: chatId,
-              agentId: selectedAgentId,
-              projectId: existingSession?.projectId || activeProjectId || null,
+              agentId: agent.id,
+              projectId: existingSession?.projectId || effectiveProjectId || null,
               createdAt: existingSession?.createdAt || Date.now(),
               messages: updatedMessages,
               totalUsage: result.usage ? {
@@ -571,17 +632,32 @@ function App() {
   };
 
   const handleStartProjectChat = (agentId, initialMessage, projectId) => {
-    // Check auth first before changing any state
+    // Check auth/trial before changing any state
+    const TRIAL_KEY = 'agent-hub-trial-used';
+    const MAX_TRIAL_LENGTH = 750;
+
     if (!user) {
-      setShowLoginModal(true);
-      return;
+      const trialUsed = localStorage.getItem(TRIAL_KEY);
+      if (trialUsed) {
+        setShowLoginModal(true);
+        return;
+      }
+      if (initialMessage.length > MAX_TRIAL_LENGTH) {
+        alert(`Trial messages are limited to ${MAX_TRIAL_LENGTH} characters. Sign up for unlimited access!`);
+        return;
+      }
     }
-    // Set the agent and project context
+
+    // Find the agent object
+    const agent = allAgents.find(a => a.id === agentId) ||
+      (agentId === 'general-chat' ? { id: 'general-chat', name: 'General Chat', systemPrompt: '' } : null);
+
+    if (!agent) return;
+
+    // Set context and send message - pass agent directly so we don't need to switch views
     setSelectedAgentId(agentId);
-    // activeProjectId is already set, but make sure it stays set
     setActiveProjectId(projectId);
-    // Send the message after state updates
-    setTimeout(() => handleSendMessage(initialMessage), 0);
+    setTimeout(() => handleSendMessage(initialMessage, agent, projectId), 0);
   };
 
   const handleBackFromProject = () => {
