@@ -414,10 +414,12 @@ function App() {
       if (isTrialMessage) {
         // Use secure edge function for trial messages (API key stays server-side)
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kefjklkgnfvswbflgams.supabase.co';
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_FN9yxizn-boUD9X5ImPhaQ_l5wp0Ew1';
         const response = await fetch(`${SUPABASE_URL}/functions/v1/trial-message`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
             messages: apiMessages,
