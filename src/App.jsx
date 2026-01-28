@@ -571,6 +571,11 @@ function App() {
   };
 
   const handleStartProjectChat = (agentId, initialMessage, projectId) => {
+    // Check auth first before changing any state
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     // Set the agent and project context
     setSelectedAgentId(agentId);
     // activeProjectId is already set, but make sure it stays set
