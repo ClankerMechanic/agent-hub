@@ -31,6 +31,7 @@ const MODEL_KEY = 'agent-hub-model';
 const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
 const PROJECTS_KEY = 'agent-hub-projects';
 const PROJECT_PROMPTS_KEY = 'agent-hub-project-prompts';
+const PROMPT_OVERRIDES_KEY = 'agent-hub-prompt-overrides';
 
 // General chat pseudo-agent (no system prompt)
 const GENERAL_CHAT_AGENT = {
@@ -104,7 +105,10 @@ function App() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
-  const [promptOverrides, setPromptOverrides] = useState({}); // Temp prompt edits for built-in agents
+  const [promptOverrides, setPromptOverrides] = useState(() => {
+    const stored = localStorage.getItem(PROMPT_OVERRIDES_KEY);
+    return stored ? JSON.parse(stored) : {};
+  }); // Persistent prompt edits for built-in agents
 
   // GitHub sync state
   const [githubConfig, setGithubConfig] = useState(() => loadGitHubConfig());
@@ -168,6 +172,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(PROJECT_PROMPTS_KEY, JSON.stringify(projectPromptOverrides));
   }, [projectPromptOverrides]);
+
+  useEffect(() => {
+    localStorage.setItem(PROMPT_OVERRIDES_KEY, JSON.stringify(promptOverrides));
+  }, [promptOverrides]);
 
   // Load server-side configured providers when user is authenticated
   useEffect(() => {
@@ -521,8 +529,18 @@ function App() {
   };
 
   const handleUpdatePrompt = async (newPrompt) => {
+    // If in project context, save as project-specific override
+    if (activeProjectId && selectedAgentId) {
+      const key = `${activeProjectId}:${selectedAgentId}`;
+      setProjectPromptOverrides(prev => ({
+        ...prev,
+        [key]: newPrompt
+      }));
+      return;
+    }
+
+    // If custom agent, update it directly
     if (selectedAgent?.isCustom) {
-      // Persist changes for custom agents
       const updatedAgent = { ...selectedAgent, systemPrompt: newPrompt };
       setCustomAgents(prev =>
         prev.map(a => a.id === selectedAgentId ? updatedAgent : a)
@@ -546,49 +564,15 @@ function App() {
           setSyncStatus(SYNC_STATUS.ERROR);
         }
       }
-    } else {
-      // Fork built-in agent as a custom agent
-      const forkedAgent = {
-        ...selectedAgent,
-        id: `${selectedAgent.id}-custom-${Date.now()}`,
-        name: `${selectedAgent.name} (Custom)`,
-        systemPrompt: newPrompt,
-        isCustom: true,
-        forkedFrom: selectedAgent.id,
-        originalPrompt: selectedAgent.systemPrompt
-      };
-
-      // Add to custom agents
-      setCustomAgents(prev => [...prev, forkedAgent]);
-
-      // Switch to the forked agent
-      setSelectedAgentId(forkedAgent.id);
-
-      // Clear any prompt overrides for the original
-      setPromptOverrides(prev => {
-        const { [selectedAgentId]: _, ...rest } = prev;
-        return rest;
-      });
-
-      // Sync to GitHub if configured
-      if (isGitHubConfigured(githubConfig)) {
-        try {
-          setSyncStatus(SYNC_STATUS.SYNCING);
-          await saveAgentToGitHub(
-            githubConfig.token,
-            githubConfig.owner,
-            githubConfig.repo,
-            forkedAgent,
-            `Fork ${selectedAgent.name} as custom agent`,
-            githubConfig.agentsPath
-          );
-          setSyncStatus(SYNC_STATUS.SUCCESS);
-        } catch (error) {
-          console.error('Failed to sync to GitHub:', error);
-          setSyncStatus(SYNC_STATUS.ERROR);
-        }
-      }
+      return;
     }
+
+    // For built-in agents (not in project), save as session override
+    // This persists in localStorage but doesn't create a new custom agent
+    setPromptOverrides(prev => ({
+      ...prev,
+      [selectedAgentId]: newPrompt
+    }));
   };
 
   const handleRevertVersion = async (versionContent) => {
