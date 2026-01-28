@@ -32,6 +32,7 @@ const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
 const PROJECTS_KEY = 'agent-hub-projects';
 const PROJECT_PROMPTS_KEY = 'agent-hub-project-prompts';
 const PROMPT_OVERRIDES_KEY = 'agent-hub-prompt-overrides';
+const DARK_MODE_KEY = 'agent-hub-dark-mode';
 
 // General chat pseudo-agent (no system prompt)
 const GENERAL_CHAT_AGENT = {
@@ -65,11 +66,8 @@ function App() {
     }
     return {};
   });
-  const [showSettings, setShowSettings] = useState(() => {
-    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    const oldKey = localStorage.getItem('agent-hub-api-key');
-    return !stored && !oldKey;
-  });
+  // Don't auto-show settings - logged out users get a free trial message
+  const [showSettings, setShowSettings] = useState(false);
 
   // LLM settings
   const [llmSettings, setLlmSettings] = useState(() => {
@@ -110,6 +108,12 @@ function App() {
     return stored ? JSON.parse(stored) : {};
   }); // Persistent prompt edits for built-in agents
 
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem(DARK_MODE_KEY);
+    return stored ? JSON.parse(stored) : false;
+  });
+
   // GitHub sync state
   const [githubConfig, setGithubConfig] = useState(() => loadGitHubConfig());
   const [showGitHubSettings, setShowGitHubSettings] = useState(false);
@@ -137,12 +141,21 @@ function App() {
     if (selectedAgentId === 'general-chat') return GENERAL_CHAT_AGENT;
     const agent = allAgents.find(a => a.id === selectedAgentId);
     if (!agent) return null;
-    // Apply prompt override if exists
+
+    // Apply project-specific override if in project context
+    if (activeProjectId) {
+      const projectKey = `${activeProjectId}:${selectedAgentId}`;
+      if (projectPromptOverrides[projectKey]) {
+        return { ...agent, systemPrompt: projectPromptOverrides[projectKey] };
+      }
+    }
+
+    // Apply global prompt override if exists (for non-project context)
     if (promptOverrides[selectedAgentId]) {
       return { ...agent, systemPrompt: promptOverrides[selectedAgentId] };
     }
     return agent;
-  }, [allAgents, selectedAgentId, promptOverrides]);
+  }, [allAgents, selectedAgentId, promptOverrides, activeProjectId, projectPromptOverrides]);
 
   // Persist to localStorage
   useEffect(() => {
@@ -176,6 +189,16 @@ function App() {
   useEffect(() => {
     localStorage.setItem(PROMPT_OVERRIDES_KEY, JSON.stringify(promptOverrides));
   }, [promptOverrides]);
+
+  // Dark mode - persist and apply to document
+  useEffect(() => {
+    localStorage.setItem(DARK_MODE_KEY, JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   // Load server-side configured providers when user is authenticated
   useEffect(() => {
@@ -244,6 +267,27 @@ function App() {
     setShowSettings(false);
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    // Clear all user state on logout
+    setSelectedAgentId(null);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setActiveProjectId(null);
+    setChatSessions({});
+    setCustomAgents([]);
+    setProjects([]);
+    setProjectPromptOverrides({});
+    setPromptOverrides({});
+    setServerConfiguredProviders({});
+    // Clear localStorage
+    localStorage.removeItem(CHAT_SESSIONS_KEY);
+    localStorage.removeItem(CUSTOM_AGENTS_KEY);
+    localStorage.removeItem(PROJECTS_KEY);
+    localStorage.removeItem(PROJECT_PROMPTS_KEY);
+    localStorage.removeItem(PROMPT_OVERRIDES_KEY);
+  };
+
   const handleSelectAgent = (agentId) => {
     setSelectedAgentId(agentId);
     setActiveChatId(null);
@@ -277,6 +321,7 @@ function App() {
     const TRIAL_KEY = 'agent-hub-trial-used';
     const MAX_TRIAL_LENGTH = 750;
     let isTrialMessage = false;
+    let messageContent = content.trim(); // May be truncated for trial users
 
     if (!user) {
       const trialUsed = localStorage.getItem(TRIAL_KEY);
@@ -285,14 +330,14 @@ function App() {
         setShowLoginModal(true);
         return;
       }
-      // Allow trial but limit message length
-      if (content.trim().length > MAX_TRIAL_LENGTH) {
-        alert(`Trial messages are limited to ${MAX_TRIAL_LENGTH} characters. Sign up for unlimited access!`);
-        return;
+      // Truncate message if too long
+      if (messageContent.length > MAX_TRIAL_LENGTH) {
+        messageContent = messageContent.slice(0, MAX_TRIAL_LENGTH);
+        alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
       }
       // Warn if using trial on General Chat (unless they already confirmed)
       if (agent.isGeneralChat && !pendingTrialMessage) {
-        setPendingTrialMessage({ content, agent, projectId: projectIdOverride });
+        setPendingTrialMessage({ content: messageContent, agent, projectId: projectIdOverride });
         setShowTrialWarning(true);
         return;
       }
@@ -326,7 +371,7 @@ function App() {
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: content.trim(),
+      content: messageContent,
       timestamp: Date.now()
     };
 
@@ -669,6 +714,7 @@ function App() {
     // Check auth/trial before changing any state
     const TRIAL_KEY = 'agent-hub-trial-used';
     const MAX_TRIAL_LENGTH = 750;
+    let messageToSend = initialMessage;
 
     if (!user) {
       const trialUsed = localStorage.getItem(TRIAL_KEY);
@@ -676,9 +722,10 @@ function App() {
         setShowLoginModal(true);
         return;
       }
+      // Truncate if too long
       if (initialMessage.length > MAX_TRIAL_LENGTH) {
-        alert(`Trial messages are limited to ${MAX_TRIAL_LENGTH} characters. Sign up for unlimited access!`);
-        return;
+        messageToSend = initialMessage.slice(0, MAX_TRIAL_LENGTH);
+        alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
       }
     }
 
@@ -691,7 +738,7 @@ function App() {
     // Set context and send message - pass agent directly so we don't need to switch views
     setSelectedAgentId(agentId);
     setActiveProjectId(projectId);
-    setTimeout(() => handleSendMessage(initialMessage, agent, projectId), 0);
+    setTimeout(() => handleSendMessage(messageToSend, agent, projectId), 0);
   };
 
   const handleBackFromProject = () => {
@@ -749,8 +796,10 @@ function App() {
         }}
         onSettingsClick={() => setShowSettings(true)}
         user={user}
-        onSignOut={signOut}
+        onSignOut={handleSignOut}
         onSignIn={() => setShowLoginModal(true)}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
         leftSidebar={
           <LeftSidebar
             onNewChat={handleNewChat}
@@ -839,6 +888,7 @@ function App() {
               setShowCreateModal(true);
             }}
             onDeleteAgent={handleDeleteCustomAgent}
+            activeProjectId={activeProjectId}
           />
         }
       />

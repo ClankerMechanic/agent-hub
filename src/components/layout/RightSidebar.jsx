@@ -5,10 +5,14 @@ export function RightSidebar({
   selectedAgentId,
   onSelectAgent,
   onCreateAgent,
-  onDeleteAgent
+  onDeleteAgent,
+  activeProjectId
 }) {
   const builtInAgents = agents.filter(a => !a.isCustom);
   const customAgents = agents.filter(a => a.isCustom);
+
+  // Don't highlight agents when in project context (they have their own prompts)
+  const shouldHighlight = !activeProjectId;
 
   return (
     <div className="flex flex-col h-full">
@@ -17,7 +21,7 @@ export function RightSidebar({
         <button
           onClick={() => onSelectAgent('general-chat')}
           className={`w-full p-3 rounded-lg flex items-center gap-3 transition-colors ${
-            selectedAgentId === 'general-chat'
+            shouldHighlight && selectedAgentId === 'general-chat'
               ? 'bg-blue-50 border border-blue-200'
               : 'bg-gray-50 hover:bg-gray-100 border border-transparent'
           }`}
@@ -41,7 +45,7 @@ export function RightSidebar({
               <AgentListItem
                 key={agent.id}
                 agent={agent}
-                isSelected={agent.id === selectedAgentId}
+                isSelected={shouldHighlight && agent.id === selectedAgentId}
                 onClick={() => onSelectAgent(agent.id)}
               />
             ))}
@@ -57,7 +61,7 @@ export function RightSidebar({
                   <AgentListItem
                     key={agent.id}
                     agent={agent}
-                    isSelected={agent.id === selectedAgentId}
+                    isSelected={shouldHighlight && agent.id === selectedAgentId}
                     onClick={() => onSelectAgent(agent.id)}
                     onDelete={onDeleteAgent}
                   />
