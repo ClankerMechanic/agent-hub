@@ -292,11 +292,14 @@ function App() {
     // For trial messages, use the secure edge function instead of direct API call
     const effectiveApiKeys = apiKeys;
 
-    // Check if we have an API key for this model's provider
+    // Determine if we should use the server-side proxy (authenticated user with no local keys)
+    const useProxy = !!user && Object.keys(effectiveApiKeys).length === 0;
+
+    // Check if we have an API key for this model's provider (skip if using proxy)
     const provider = getProviderForModel(modelToUse);
     const providerKeyMap = { anthropic: 'claude', openai: 'openai', google: 'gemini' };
     const keyName = providerKeyMap[provider];
-    if (!effectiveApiKeys[keyName]) {
+    if (!useProxy && !effectiveApiKeys[keyName]) {
       alert(`No API key configured for ${provider}. Go to Settings to add your API key.`);
       return;
     }
@@ -369,10 +372,6 @@ function App() {
           options.extendedThinking = true;
           options.thinkingBudget = llmSettings.thinkingBudget;
         }
-
-        // Use proxy for authenticated users (keys stored server-side)
-        // Fall back to direct API calls if user has local keys
-        const useProxy = !!user && Object.keys(effectiveApiKeys).length === 0;
 
         result = await sendMessage(
           apiMessages,
