@@ -53,6 +53,17 @@ export function LandingPage() {
           </div>
           <p className="text-sm text-gray-500 mt-4">Works with Claude, GPT-4, and Gemini</p>
         </div>
+
+        {/* App Screenshot */}
+        <div className="mt-16 max-w-5xl mx-auto">
+          <div className="relative rounded-xl overflow-hidden shadow-2xl border border-gray-200">
+            <img
+              src="/app-screenshot.png"
+              alt="Core Agents app interface showing project view with agents"
+              className="w-full"
+            />
+          </div>
+        </div>
       </section>
 
       {/* Problem Section */}
