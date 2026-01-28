@@ -108,8 +108,16 @@ export function Settings({ onSave, onClose, initialApiKeys = {} }) {
   const hasNewKeyToSave = Object.values(apiKeys).some(key => key && key.trim());
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg w-full relative">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={(e) => {
+        // Close when clicking backdrop (not the modal itself)
+        if (e.target === e.currentTarget && onClose) {
+          onClose();
+        }
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-xl p-8 max-w-lg w-full relative max-h-[90vh] overflow-y-auto">
         {onClose && (
           <button
             onClick={onClose}

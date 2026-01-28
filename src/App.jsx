@@ -738,11 +738,6 @@ function App() {
   // Get active project
   const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
-  // Show settings if no API keys configured
-  if (showSettings) {
-    return <Settings onSave={handleSaveApiKeys} onClose={() => setShowSettings(false)} initialApiKeys={apiKeys} />;
-  }
-
   return (
     <>
       <AppLayout
@@ -933,6 +928,15 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <Settings
+          onSave={handleSaveApiKeys}
+          onClose={() => setShowSettings(false)}
+          initialApiKeys={apiKeys}
+        />
       )}
     </>
   );
