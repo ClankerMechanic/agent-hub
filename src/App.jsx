@@ -202,13 +202,22 @@ function App() {
   }, [darkMode]);
 
   // Load server-side configured providers when user is authenticated
+  // Also clear user-specific data when logged out
   useEffect(() => {
     if (user) {
       getConfiguredProviders()
         .then(data => setServerConfiguredProviders(data.providers || {}))
         .catch(err => console.error('Failed to load server API key status:', err));
     } else {
+      // Clear user-specific data when logged out
       setServerConfiguredProviders({});
+      setChatSessions({});
+      setCurrentMessages([]);
+      setActiveChatId(null);
+      setCustomAgents([]);
+      setProjects([]);
+      setProjectPromptOverrides({});
+      setPromptOverrides({});
     }
   }, [user]);
 
@@ -322,6 +331,7 @@ function App() {
     const TRIAL_KEY = 'agent-hub-trial-used';
     const MAX_TRIAL_LENGTH = 750;
     let isTrialMessage = false;
+    let wasTruncated = false;
     let messageContent = content.trim(); // May be truncated for trial users
 
     if (!user) {
@@ -332,10 +342,10 @@ function App() {
         setShowLoginModal(true);
         return;
       }
-      // Truncate message if too long
+      // Truncate message if too long (alert after message sends)
       if (messageContent.length > MAX_TRIAL_LENGTH) {
         messageContent = messageContent.slice(0, MAX_TRIAL_LENGTH);
-        alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
+        wasTruncated = true;
       }
       // Warn if using trial on General Chat (unless they already confirmed)
       if (agent.isGeneralChat && !pendingTrialMessage) {
@@ -360,11 +370,11 @@ function App() {
     // Determine if we should use the server-side proxy (authenticated user with no local keys)
     const useProxy = !!user && Object.keys(effectiveApiKeys).length === 0;
 
-    // Check if we have an API key for this model's provider (skip if using proxy)
+    // Check if we have an API key for this model's provider (skip if using proxy or trial)
     const provider = getProviderForModel(modelToUse);
     const providerKeyMap = { anthropic: 'claude', openai: 'openai', google: 'gemini' };
     const keyName = providerKeyMap[provider];
-    if (!useProxy && !effectiveApiKeys[keyName]) {
+    if (!useProxy && !isTrialMessage && !effectiveApiKeys[keyName]) {
       alert(`No API key configured for ${provider}. Go to Settings to add your API key.`);
       return;
     }
@@ -451,6 +461,9 @@ function App() {
       // Mark trial as used after successful message
       if (isTrialMessage) {
         localStorage.setItem(TRIAL_KEY, 'true');
+        if (wasTruncated) {
+          alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
+        }
       }
 
       if (result.success) {
