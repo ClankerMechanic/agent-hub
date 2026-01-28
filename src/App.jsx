@@ -820,6 +820,7 @@ function App() {
             onSelectProject={handleSelectProject}
             onCreateProject={() => setShowCreateProject(true)}
             onDeleteProject={handleDeleteProject}
+            darkMode={darkMode}
           />
         }
         mainContent={
@@ -836,6 +837,7 @@ function App() {
               onUpdateProjectPrompt={handleUpdateProjectPrompt}
               projectPromptOverrides={projectPromptOverrides}
               onSelectAgent={handleSelectAgentInProject}
+              darkMode={darkMode}
             />
           ) : (
             <MainContent
@@ -878,6 +880,7 @@ function App() {
                 setActiveChatId(null);
                 setCurrentMessages([]);
               }}
+              darkMode={darkMode}
             />
           )
         }
@@ -892,6 +895,7 @@ function App() {
             }}
             onDeleteAgent={handleDeleteCustomAgent}
             activeProjectId={activeProjectId}
+            darkMode={darkMode}
           />
         }
       />
