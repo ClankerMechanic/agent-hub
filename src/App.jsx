@@ -241,6 +241,7 @@ function App() {
     setActiveChatId(null);
     setCurrentMessages([]);
     setPromptExpanded(false);
+    setActiveProjectId(null); // Clear project context when selecting agent from sidebar
   };
 
   const handleNewChat = () => {
@@ -261,6 +262,7 @@ function App() {
     if (session) {
       setActiveChatId(chatId);
       setSelectedAgentId(session.agentId);
+      setActiveProjectId(null); // Clear project context when selecting from history
     }
   };
 
@@ -654,6 +656,11 @@ function App() {
   };
 
   const handleDeleteProject = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    const projectName = project?.name || 'this project';
+    if (!window.confirm(`Are you sure you want to delete "${projectName}"? This cannot be undone.`)) {
+      return;
+    }
     setProjects(prev => prev.filter(p => p.id !== projectId));
     if (activeProjectId === projectId) {
       setActiveProjectId(null);
@@ -736,6 +743,7 @@ function App() {
           setSelectedAgentId(null);
           setActiveChatId(null);
           setCurrentMessages([]);
+          setActiveProjectId(null); // Clear project context - go to actual home
         }}
         onSettingsClick={() => setShowSettings(true)}
         user={user}
@@ -809,6 +817,10 @@ function App() {
                 }
               }}
               activeProject={activeProject}
+              allAgents={allAgents}
+              chatSessions={chatSessions}
+              onSelectAgent={handleSelectAgent}
+              onSelectChat={handleSelectChat}
             />
           )
         }

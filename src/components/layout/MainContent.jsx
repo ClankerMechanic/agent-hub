@@ -21,7 +21,11 @@ export function MainContent({
   githubEnabled,
   onShowVersionHistory,
   onClose,
-  activeProject
+  activeProject,
+  allAgents = [],
+  chatSessions = {},
+  onSelectAgent,
+  onSelectChat
 }) {
   const [homeInput, setHomeInput] = useState('');
 
@@ -33,53 +37,105 @@ export function MainContent({
     }
   };
 
-  // No agent selected - show welcome state with chat input
+  // Get recent chats sorted by date
+  const recentChats = Object.values(chatSessions)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 5);
+
+  // No agent selected - show welcome state with agent grid and chat input
   if (!agent) {
     return (
       <div className="flex flex-col h-full bg-gray-50">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-full max-w-2xl px-4">
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl mx-auto">
+            {/* Header */}
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-              </div>
               <h2 className="text-2xl font-semibold text-gray-900 mb-2">What can I help you with?</h2>
               <p className="text-gray-500">
-                Type below to start a general chat, or select an agent from the sidebar
+                Select an agent below, or start a general chat
               </p>
             </div>
 
-            {/* Chat Input Box */}
-            <div className="relative">
-              <textarea
-                value={homeInput}
-                onChange={(e) => setHomeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleHomeSend();
-                  }
-                }}
-                placeholder="Message General Chat..."
-                rows={3}
-                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm"
-              />
-              <button
-                onClick={handleHomeSend}
-                disabled={!homeInput.trim()}
-                className="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
+            {/* Agent Cards Grid */}
+            {allAgents.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Agents</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {allAgents.slice(0, 8).map(agentItem => (
+                    <button
+                      key={agentItem.id}
+                      onClick={() => onSelectAgent?.(agentItem.id)}
+                      className="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all text-left"
+                    >
+                      <span className="text-3xl block mb-2">{agentItem.icon}</span>
+                      <h4 className="text-sm font-medium text-gray-900 truncate">{agentItem.name}</h4>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">{agentItem.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Chat Input */}
+            <div className="mb-8 bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Quick Chat</p>
+              <div className="relative">
+                <textarea
+                  value={homeInput}
+                  onChange={(e) => setHomeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleHomeSend();
+                    }
+                  }}
+                  placeholder="Type a message to start a general chat..."
+                  rows={2}
+                  className="w-full px-3 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
+                />
+                <button
+                  onClick={handleHomeSend}
+                  disabled={!homeInput.trim()}
+                  className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Press Enter to send, Shift+Enter for new line
+              </p>
             </div>
 
-            <p className="text-xs text-gray-400 text-center mt-3">
-              Press Enter to send, Shift+Enter for new line
-            </p>
+            {/* Recent Chats */}
+            {recentChats.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Recent Chats</h3>
+                <div className="space-y-2">
+                  {recentChats.map(session => {
+                    const sessionAgent = allAgents.find(a => a.id === session.agentId);
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={() => onSelectChat?.(session.id)}
+                        className="w-full p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all text-left flex items-center gap-3"
+                      >
+                        <span className="text-lg">{sessionAgent?.icon || '💬'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 truncate">
+                            {session.title || session.messages?.[0]?.content?.slice(0, 50) || 'New chat'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {sessionAgent?.name || 'General Chat'} • {new Date(session.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
