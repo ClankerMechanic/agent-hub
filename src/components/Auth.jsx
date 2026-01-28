@@ -98,7 +98,7 @@ export function AuthGate({ children }) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.origin
+        emailRedirectTo: `${window.location.origin}/app`
       }
     })
 
@@ -117,7 +117,7 @@ export function AuthGate({ children }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: `${window.location.origin}/app`
       }
     })
 

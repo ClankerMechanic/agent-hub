@@ -46,7 +46,7 @@ export function LoginModal({ isOpen, onClose }) {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin }
+      options: { emailRedirectTo: `${window.location.origin}/app` }
     })
     if (error) {
       setError(error.message)
@@ -62,7 +62,7 @@ export function LoginModal({ isOpen, onClose }) {
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: `${window.location.origin}/app` }
     })
     if (error) {
       setError(error.message)
