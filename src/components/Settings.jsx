@@ -1,11 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PROVIDERS } from '../config/models';
+import { useAuth } from './Auth';
+import { saveApiKey, deleteApiKey, getConfiguredProviders } from '../services/secureKeys';
 
 const providerList = Object.values(PROVIDERS);
 
 export function Settings({ onSave, initialApiKeys = {} }) {
+  const { user } = useAuth();
   const [apiKeys, setApiKeys] = useState(initialApiKeys);
   const [showKeys, setShowKeys] = useState({});
+  const [serverKeys, setServerKeys] = useState({}); // Which providers have server-side keys
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Load server-side key status for authenticated users
+  useEffect(() => {
+    if (user) {
+      getConfiguredProviders()
+        .then(data => setServerKeys(data.providers || {}))
+        .catch(err => console.error('Failed to load API key status:', err));
+    }
+  }, [user]);
 
   const handleKeyChange = (providerId, value) => {
     setApiKeys(prev => ({
@@ -21,7 +36,25 @@ export function Settings({ onSave, initialApiKeys = {} }) {
     }));
   };
 
-  const clearKey = (providerId) => {
+  const clearKey = async (providerId) => {
+    const providerMap = { claude: 'anthropic', openai: 'openai', gemini: 'google' };
+
+    // If authenticated and has server key, delete from server
+    if (user && serverKeys[providerMap[providerId]]) {
+      try {
+        await deleteApiKey(providerMap[providerId]);
+        setServerKeys(prev => {
+          const newKeys = { ...prev };
+          delete newKeys[providerMap[providerId]];
+          return newKeys;
+        });
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+
+    // Also clear local input
     setApiKeys(prev => {
       const newKeys = { ...prev };
       delete newKeys[providerId];
@@ -29,33 +62,76 @@ export function Settings({ onSave, initialApiKeys = {} }) {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Only save non-empty keys
-    const validKeys = {};
-    for (const [key, value] of Object.entries(apiKeys)) {
-      if (value && value.trim()) {
-        validKeys[key] = value.trim();
+    setError(null);
+    setSaving(true);
+
+    try {
+      // For authenticated users, save to server
+      if (user) {
+        const providerMap = { claude: 'anthropic', openai: 'openai', gemini: 'google' };
+
+        for (const [providerId, value] of Object.entries(apiKeys)) {
+          if (value && value.trim()) {
+            await saveApiKey(providerMap[providerId], value.trim());
+          }
+        }
+
+        // Refresh server key status
+        const data = await getConfiguredProviders();
+        setServerKeys(data.providers || {});
+
+        // Clear local keys and close (keys are now server-side)
+        onSave({});
+      } else {
+        // For non-authenticated users, save locally
+        const validKeys = {};
+        for (const [key, value] of Object.entries(apiKeys)) {
+          if (value && value.trim()) {
+            validKeys[key] = value.trim();
+          }
+        }
+        onSave(validKeys);
       }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
-    onSave(validKeys);
   };
 
-  // Check if at least one key is configured
-  const hasAnyKey = Object.values(apiKeys).some(key => key && key.trim());
+  // Check if at least one key is configured (local or server)
+  const providerMap = { claude: 'anthropic', openai: 'openai', gemini: 'google' };
+  const hasAnyKey = Object.values(apiKeys).some(key => key && key.trim()) ||
+    Object.keys(serverKeys).length > 0;
+  const hasNewKeyToSave = Object.values(apiKeys).some(key => key && key.trim());
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg w-full">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Agent Hub</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Core Agents</h1>
           <p className="text-gray-600">Configure your LLM API keys</p>
+          {user && (
+            <p className="text-xs text-blue-600 mt-1">
+              Signed in - keys are securely stored on our servers
+            </p>
+          )}
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             {providerList.map((provider) => {
-              const hasKey = apiKeys[provider.id] && apiKeys[provider.id].trim();
+              const hasLocalKey = apiKeys[provider.id] && apiKeys[provider.id].trim();
+              const hasServerKey = serverKeys[providerMap[provider.id]]?.configured;
+              const hasKey = hasLocalKey || hasServerKey;
               const isVisible = showKeys[provider.id];
 
               return (
@@ -64,12 +140,20 @@ export function Settings({ onSave, initialApiKeys = {} }) {
                     <label className="block text-sm font-medium text-gray-700">
                       {provider.name}
                     </label>
-                    {hasKey && (
+                    {hasServerKey && (
                       <span className="text-xs text-green-600 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                        </svg>
+                        Saved securely
+                      </span>
+                    )}
+                    {hasLocalKey && !hasServerKey && (
+                      <span className="text-xs text-amber-600 flex items-center gap-1">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
-                        Configured
+                        Ready to save
                       </span>
                     )}
                   </div>
@@ -122,15 +206,34 @@ export function Settings({ onSave, initialApiKeys = {} }) {
 
           <button
             type="submit"
-            disabled={!hasAnyKey}
-            className="w-full mt-6 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            disabled={(!hasAnyKey && !hasNewKeyToSave) || saving}
+            className="w-full mt-6 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            Save & Continue
+            {saving ? (
+              <>
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Saving...
+              </>
+            ) : hasNewKeyToSave ? (
+              'Save & Continue'
+            ) : hasAnyKey ? (
+              'Continue'
+            ) : (
+              'Save & Continue'
+            )}
           </button>
         </form>
 
         <p className="mt-4 text-xs text-gray-500 text-center">
-          Your API keys are stored locally in your browser and never sent to our servers.
+          {user ? (
+            <>Your API keys are encrypted and stored securely on our servers. Only you can access them.</>
+          ) : (
+            <>Your API keys are stored locally in your browser. Sign in to store them securely on our servers.</>
+          )}
+          <br />
           Configure at least one provider to continue.
         </p>
       </div>

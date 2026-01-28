@@ -7,9 +7,12 @@ export function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">CA</span>
-            </div>
+            <svg className="w-8 h-8" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="8" fill="#2563EB"/>
+              <path d="M16 6C10.477 6 6 10.477 6 16C6 21.523 10.477 26 16 26C18.5 26 20.77 25.05 22.5 23.5" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+              <circle cx="22" cy="12" r="4" fill="white"/>
+              <circle cx="22" cy="12" r="2" fill="#2563EB"/>
+            </svg>
             <span className="font-semibold text-gray-900">Core Agents</span>
           </div>
           <Link

@@ -370,13 +370,17 @@ function App() {
           options.thinkingBudget = llmSettings.thinkingBudget;
         }
 
-        // Call API directly with user's keys
+        // Use proxy for authenticated users (keys stored server-side)
+        // Fall back to direct API calls if user has local keys
+        const useProxy = !!user && Object.keys(effectiveApiKeys).length === 0;
+
         result = await sendMessage(
           apiMessages,
           systemPrompt,
           effectiveApiKeys,
           modelToUse,
-          options
+          options,
+          useProxy
         );
       }
 

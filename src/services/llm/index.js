@@ -4,6 +4,7 @@ import { claudeProvider } from './claudeProvider';
 import { openaiProvider } from './openaiProvider';
 import { geminiProvider } from './geminiProvider';
 import { getProviderForModel, getModelConfig } from '../../config/models';
+import { sendChatMessage } from '../secureKeys';
 
 // Provider registry
 const providers = {
@@ -24,12 +25,15 @@ export function getProviderForModelId(modelId) {
 }
 
 // Send message using the appropriate provider
+// If useProxy is true, routes through Supabase Edge Function (server-side keys)
+// If useProxy is false, uses client-side keys directly
 export async function sendMessage(
   messages,
   systemPrompt,
   apiKeys,
   model,
-  options = {}
+  options = {},
+  useProxy = false
 ) {
   // Get the provider for this model
   const providerId = getProviderForModel(model);
@@ -40,6 +44,40 @@ export async function sendMessage(
     };
   }
 
+  // Map internal provider IDs to API provider names
+  const providerMap = {
+    claude: 'anthropic',
+    openai: 'openai',
+    gemini: 'google'
+  };
+
+  // If using proxy (authenticated user with server-side keys)
+  if (useProxy) {
+    try {
+      const result = await sendChatMessage(
+        messages,
+        systemPrompt,
+        providerMap[providerId],
+        model,
+        {
+          temperature: options.temperature,
+          maxTokens: options.maxTokens
+        }
+      );
+      return {
+        success: true,
+        content: result.content,
+        usage: result.usage
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Direct API call (client-side keys)
   const provider = providers[providerId];
   if (!provider) {
     return {

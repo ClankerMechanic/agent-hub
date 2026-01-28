@@ -159,7 +159,7 @@ export function ProjectView({
 
                   {/* Add Agent Dropdown */}
                   {showAddAgent && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-64 overflow-y-auto">
+                    <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-64 overflow-y-auto min-w-[280px] w-max">
                       {availableAgents.length === 0 ? (
                         <p className="p-3 text-sm text-gray-500">All agents already added</p>
                       ) : (
@@ -169,10 +169,10 @@ export function ProjectView({
                             onClick={() => handleAddAgent(agent.id)}
                             className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 text-left"
                           >
-                            <span className="text-lg">{agent.icon}</span>
-                            <div>
+                            <span className="text-lg flex-shrink-0">{agent.icon}</span>
+                            <div className="min-w-0">
                               <p className="text-sm font-medium text-gray-900">{agent.name}</p>
-                              <p className="text-xs text-gray-500 truncate">{agent.description}</p>
+                              <p className="text-xs text-gray-500">{agent.description}</p>
                             </div>
                           </button>
                         ))
