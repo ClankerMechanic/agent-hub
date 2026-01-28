@@ -827,10 +827,12 @@ function App() {
                 }
               }}
               activeProject={activeProject}
-              allAgents={allAgents}
-              chatSessions={chatSessions}
-              onSelectAgent={handleSelectAgent}
-              onSelectChat={handleSelectChat}
+              onBackToProject={() => {
+                // Go back to project view (clear agent, keep project)
+                setSelectedAgentId(null);
+                setActiveChatId(null);
+                setCurrentMessages([]);
+              }}
             />
           )
         }
