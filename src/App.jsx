@@ -713,7 +713,7 @@ function App() {
 
   // Show settings if no API keys configured
   if (showSettings) {
-    return <Settings onSave={handleSaveApiKeys} initialApiKeys={apiKeys} />;
+    return <Settings onSave={handleSaveApiKeys} onClose={() => setShowSettings(false)} initialApiKeys={apiKeys} />;
   }
 
   return (

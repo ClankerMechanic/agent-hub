@@ -5,7 +5,7 @@ import { saveApiKey, deleteApiKey, getConfiguredProviders } from '../services/se
 
 const providerList = Object.values(PROVIDERS);
 
-export function Settings({ onSave, initialApiKeys = {} }) {
+export function Settings({ onSave, onClose, initialApiKeys = {} }) {
   const { user } = useAuth();
   const [apiKeys, setApiKeys] = useState(initialApiKeys);
   const [showKeys, setShowKeys] = useState({});
@@ -109,7 +109,18 @@ export function Settings({ onSave, initialApiKeys = {} }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg w-full">
+      <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg w-full relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Close"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Core Agents</h1>
           <p className="text-gray-600">Configure your LLM API keys</p>
