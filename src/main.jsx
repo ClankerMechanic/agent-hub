@@ -2,14 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-import { AuthProvider, AuthGate } from './components/Auth.jsx'
+import { AuthProvider } from './components/Auth.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <AuthGate>
-        <App />
-      </AuthGate>
+      <App />
     </AuthProvider>
   </StrictMode>,
 )

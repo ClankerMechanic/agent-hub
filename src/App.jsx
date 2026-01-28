@@ -9,6 +9,8 @@ import { AppLayout } from './components/layout/AppLayout';
 import { LeftSidebar } from './components/layout/LeftSidebar';
 import { RightSidebar } from './components/layout/RightSidebar';
 import { MainContent } from './components/layout/MainContent';
+import { LoginModal } from './components/LoginModal';
+import { useAuth } from './components/Auth';
 import { sendMessage } from './services/llm';
 import { getModelConfig, getProviderForModel } from './config/models';
 import { agents as builtInAgents } from './config/agents';
@@ -41,6 +43,10 @@ const GENERAL_CHAT_AGENT = {
 };
 
 function App() {
+  // Auth state
+  const { user, signOut } = useAuth()
+  const [showLoginModal, setShowLoginModal] = useState(false)
+
   // Core state - API keys for multiple providers
   const [apiKeys, setApiKeys] = useState(() => {
     const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
@@ -245,6 +251,12 @@ function App() {
 
   const handleSendMessage = async (content) => {
     if (!selectedAgent || !content.trim()) return;
+
+    // Require auth to send messages
+    if (!user) {
+      setShowLoginModal(true)
+      return
+    }
 
     // Determine which model to use (agent's preferred or global)
     const modelToUse = selectedAgent.preferredModel || selectedModel;
@@ -616,6 +628,9 @@ function App() {
           setCurrentMessages([]);
         }}
         onSettingsClick={() => setShowSettings(true)}
+        user={user}
+        onSignOut={signOut}
+        onSignIn={() => setShowLoginModal(true)}
         leftSidebar={
           <LeftSidebar
             onNewChat={handleNewChat}
@@ -727,6 +742,11 @@ function App() {
         onClose={() => setShowCreateProject(false)}
         onSave={handleCreateProject}
         agents={allAgents}
+      />
+
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
       />
     </>
   );
