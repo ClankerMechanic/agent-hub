@@ -49,6 +49,7 @@ function App() {
   // Auth state
   const { user, signOut } = useAuth()
   const [showLoginModal, setShowLoginModal] = useState(false)
+  const [trialExpiredModal, setTrialExpiredModal] = useState(false) // Show trial expired message in login modal
   const [showTrialWarning, setShowTrialWarning] = useState(false)
   const [pendingTrialMessage, setPendingTrialMessage] = useState(null)
   const [serverConfiguredProviders, setServerConfiguredProviders] = useState({}) // Which providers have server-side keys
@@ -327,6 +328,7 @@ function App() {
       const trialUsed = localStorage.getItem(TRIAL_KEY);
       if (trialUsed) {
         // Trial already used, require sign up
+        setTrialExpiredModal(true);
         setShowLoginModal(true);
         return;
       }
@@ -719,6 +721,7 @@ function App() {
     if (!user) {
       const trialUsed = localStorage.getItem(TRIAL_KEY);
       if (trialUsed) {
+        setTrialExpiredModal(true);
         setShowLoginModal(true);
         return;
       }
@@ -930,7 +933,11 @@ function App() {
 
       <LoginModal
         isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
+        onClose={() => {
+          setShowLoginModal(false);
+          setTrialExpiredModal(false);
+        }}
+        trialExpired={trialExpiredModal}
       />
 
       {/* Trial Warning Dialog */}

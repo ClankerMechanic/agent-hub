@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function LoginModal({ isOpen, onClose }) {
+export function LoginModal({ isOpen, onClose, trialExpired = false }) {
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -83,9 +83,16 @@ export function LoginModal({ isOpen, onClose }) {
         </button>
 
         <div className="text-center mb-6">
-          <div className="text-4xl mb-2">🤖</div>
-          <h2 className="text-xl font-bold text-white">Sign in to chat</h2>
-          <p className="text-gray-400 mt-1 text-sm">Create a free account to start using agents</p>
+          <div className="text-4xl mb-2">{trialExpired ? '🎉' : '🤖'}</div>
+          <h2 className="text-xl font-bold text-white">
+            {trialExpired ? 'You used your free message!' : 'Sign in to chat'}
+          </h2>
+          <p className="text-gray-400 mt-1 text-sm">
+            {trialExpired
+              ? 'Sign up and add your API keys to continue chatting with unlimited messages.'
+              : 'Create a free account to start using agents'
+            }
+          </p>
         </div>
 
         <button
