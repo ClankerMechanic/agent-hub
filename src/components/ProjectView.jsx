@@ -10,13 +10,11 @@ export function ProjectView({
   onBack,
   onAddAgentToProject,
   onUpdateProjectPrompt,
-  projectPromptOverrides = {}
+  projectPromptOverrides = {},
+  onSelectAgent
 }) {
-  const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [chatInput, setChatInput] = useState('');
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
-  const [editedPrompt, setEditedPrompt] = useState('');
 
   // Get agents for this project (handle both old agentId and new agentIds format)
   const agentIds = project.agentIds || (project.agentId ? [project.agentId] : []);
@@ -29,69 +27,26 @@ export function ProjectView({
     a => a.id !== 'general-chat' && !agentIds.includes(a.id)
   );
 
-  // Get the currently selected agent with project-specific prompt override
-  const selectedAgent = selectedAgentId
-    ? (() => {
-        const baseAgent = agents.find(a => a.id === selectedAgentId);
-        if (!baseAgent) return null;
-        const overrideKey = `${project.id}:${selectedAgentId}`;
-        const overriddenPrompt = projectPromptOverrides[overrideKey];
-        return overriddenPrompt ? { ...baseAgent, systemPrompt: overriddenPrompt } : baseAgent;
-      })()
-    : null;
-
   // Get chats for this project (filtered by projectId)
   const projectChats = Object.values(chatSessions)
     .filter(session => session.projectId === project.id)
     .sort((a, b) => b.createdAt - a.createdAt);
 
-  // Get chats for selected agent within project
-  const agentChats = selectedAgentId
-    ? projectChats.filter(session => session.agentId === selectedAgentId)
-    : projectChats;
-
   const handleAgentClick = (agentId) => {
-    setSelectedAgentId(agentId);
-    setChatInput('');
-    setIsEditingPrompt(false);
-    // Load the current prompt (with override if exists)
-    const baseAgent = agents.find(a => a.id === agentId);
-    const overrideKey = `${project.id}:${agentId}`;
-    setEditedPrompt(projectPromptOverrides[overrideKey] || baseAgent?.systemPrompt || '');
+    // Navigate to agent view (MainContent) while keeping project context
+    onSelectAgent?.(agentId);
   };
 
   const handleStartChat = (agentId = null) => {
     if (!chatInput.trim()) return;
-    const targetAgentId = agentId || selectedAgentId || 'general-chat';
+    const targetAgentId = agentId || 'general-chat';
     onStartChat(targetAgentId, chatInput.trim(), project.id);
     setChatInput('');
-  };
-
-  const handleBackToAgents = () => {
-    setSelectedAgentId(null);
-    setChatInput('');
-    setIsEditingPrompt(false);
   };
 
   const handleAddAgent = (agentId) => {
     onAddAgentToProject(project.id, agentId);
     setShowAddAgent(false);
-  };
-
-  const handleSavePrompt = () => {
-    if (selectedAgentId && editedPrompt !== undefined) {
-      onUpdateProjectPrompt(project.id, selectedAgentId, editedPrompt);
-      setIsEditingPrompt(false);
-    }
-  };
-
-  const handleResetPrompt = () => {
-    const baseAgent = agents.find(a => a.id === selectedAgentId);
-    if (baseAgent) {
-      setEditedPrompt(baseAgent.systemPrompt || '');
-      onUpdateProjectPrompt(project.id, selectedAgentId, null); // null to remove override
-      setIsEditingPrompt(false);
-    }
   };
 
   return (
@@ -119,304 +74,131 @@ export function ProjectView({
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {!selectedAgent ? (
-          /* Project Home - Agent Grid + Chat Input */
-          <div className="max-w-4xl mx-auto">
-            {/* Agent Cards */}
-            <div className="mb-6">
-              <h2 className="text-sm font-medium text-gray-700 mb-3">Project Agents</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {projectAgents.map(agent => {
-                  const overrideKey = `${project.id}:${agent.id}`;
-                  const hasOverride = !!projectPromptOverrides[overrideKey];
-                  return (
-                    <button
-                      key={agent.id}
-                      onClick={() => handleAgentClick(agent.id)}
-                      className="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all text-left group relative"
-                    >
-                      {hasOverride && (
-                        <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full" title="Custom prompt" />
-                      )}
-                      <span className="text-3xl block mb-2">{agent.icon}</span>
-                      <h3 className="text-sm font-medium text-gray-900 truncate">{agent.name}</h3>
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{agent.description}</p>
-                    </button>
-                  );
-                })}
-
-                {/* Add Agent Button */}
-                <div className="relative">
+        {/* Project Home - Agent Grid + Chat Input */}
+        <div className="max-w-4xl mx-auto">
+          {/* Agent Cards */}
+          <div className="mb-6">
+            <h2 className="text-sm font-medium text-gray-700 mb-3">Project Agents</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {projectAgents.map(agent => {
+                const overrideKey = `${project.id}:${agent.id}`;
+                const hasOverride = !!projectPromptOverrides[overrideKey];
+                return (
                   <button
-                    onClick={() => setShowAddAgent(!showAddAgent)}
-                    className="w-full h-full min-h-[120px] p-4 bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-all flex flex-col items-center justify-center gap-2"
+                    key={agent.id}
+                    onClick={() => handleAgentClick(agent.id)}
+                    className="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all text-left group relative"
                   >
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span className="text-sm text-gray-500">Add Agent</span>
-                  </button>
-
-                  {/* Add Agent Dropdown */}
-                  {showAddAgent && (
-                    <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-64 overflow-y-auto min-w-[280px] w-max">
-                      {availableAgents.length === 0 ? (
-                        <p className="p-3 text-sm text-gray-500">All agents already added</p>
-                      ) : (
-                        availableAgents.map(agent => (
-                          <button
-                            key={agent.id}
-                            onClick={() => handleAddAgent(agent.id)}
-                            className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 text-left"
-                          >
-                            <span className="text-lg flex-shrink-0">{agent.icon}</span>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900">{agent.name}</p>
-                              <p className="text-xs text-gray-500">{agent.description}</p>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* General Chat Input */}
-            <div className="mb-8 bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Quick Chat</p>
-              <div className="relative">
-                <textarea
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleStartChat('general-chat');
-                    }
-                  }}
-                  placeholder="Type a message to start a general chat..."
-                  rows={2}
-                  className="w-full px-3 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
-                />
-                <button
-                  onClick={() => handleStartChat('general-chat')}
-                  disabled={!chatInput.trim()}
-                  className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Previous Chats */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-700 mb-3">Previous Chats</h2>
-              {projectChats.length > 0 ? (
-                <div className="space-y-2">
-                  {projectChats.map(session => {
-                    const agent = agents.find(a => a.id === session.agentId);
-                    return (
-                      <button
-                        key={session.id}
-                        onClick={() => onSelectChat(session.id)}
-                        className="w-full p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all text-left flex items-center gap-3"
-                      >
-                        <span className="text-lg">{agent?.icon || '💬'}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 truncate">
-                            {session.title || session.messages?.[0]?.content?.slice(0, 50) || 'New chat'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {agent?.name || 'General Chat'} • {new Date(session.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-6 bg-white rounded-xl border border-gray-200 text-center">
-                  <p className="text-sm text-gray-500">No chats yet in this project</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Agent View within Project */
-          <div className="max-w-3xl mx-auto">
-            {/* Back to agents */}
-            <button
-              onClick={handleBackToAgents}
-              className="mb-4 text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back to project
-            </button>
-
-            {/* Agent Header */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{selectedAgent?.icon || '💬'}</span>
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-900">
-                      {selectedAgent?.name || 'General Chat'}
-                    </h2>
-                    <p className="text-sm text-gray-500">
-                      {selectedAgent?.description || 'Chat without a specific agent'}
-                    </p>
-                  </div>
-                </div>
-                {selectedAgent?.id !== 'general-chat' && selectedAgent?.systemPrompt !== undefined && (
-                  <button
-                    onClick={() => {
-                      if (isEditingPrompt) {
-                        handleSavePrompt();
-                      } else {
-                        setIsEditingPrompt(true);
-                      }
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                  >
-                    {isEditingPrompt ? (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Save
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit for this project
-                      </>
+                    {hasOverride && (
+                      <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full" title="Custom prompt" />
                     )}
+                    <span className="text-3xl block mb-2">{agent.icon}</span>
+                    <h3 className="text-sm font-medium text-gray-900 truncate">{agent.name}</h3>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">{agent.description}</p>
                   </button>
+                );
+              })}
+
+              {/* Add Agent Button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddAgent(!showAddAgent)}
+                  className="w-full h-full min-h-[120px] p-4 bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-all flex flex-col items-center justify-center gap-2"
+                >
+                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="text-sm text-gray-500">Add Agent</span>
+                </button>
+
+                {/* Add Agent Dropdown */}
+                {showAddAgent && (
+                  <div className="absolute top-full left-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-64 overflow-y-auto min-w-[280px] w-max">
+                    {availableAgents.length === 0 ? (
+                      <p className="p-3 text-sm text-gray-500">All agents already added</p>
+                    ) : (
+                      availableAgents.map(agent => (
+                        <button
+                          key={agent.id}
+                          onClick={() => handleAddAgent(agent.id)}
+                          className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 text-left"
+                        >
+                          <span className="text-lg flex-shrink-0">{agent.icon}</span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{agent.name}</p>
+                            <p className="text-xs text-gray-500">{agent.description}</p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
-
-              {/* System Prompt */}
-              {selectedAgent?.id !== 'general-chat' && (
-                <div className="mt-4">
-                  {isEditingPrompt ? (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-medium text-gray-500">System Prompt (Project-specific)</p>
-                        {projectPromptOverrides[`${project.id}:${selectedAgentId}`] && (
-                          <button
-                            onClick={handleResetPrompt}
-                            className="text-xs text-gray-500 hover:text-red-600"
-                          >
-                            Reset to original
-                          </button>
-                        )}
-                      </div>
-                      <textarea
-                        value={editedPrompt}
-                        onChange={(e) => setEditedPrompt(e.target.value)}
-                        rows={6}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none text-sm"
-                        placeholder="Enter system prompt..."
-                      />
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => setIsEditingPrompt(false)}
-                          className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSavePrompt}
-                          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                        >
-                          Save for this project
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-medium text-gray-500">System Prompt</p>
-                        {projectPromptOverrides[`${project.id}:${selectedAgentId}`] && (
-                          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Customized</span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {selectedAgent?.systemPrompt || 'No system prompt'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
+          </div>
 
-            {/* Chat Input */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+          {/* General Chat Input */}
+          <div className="mb-8 bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Quick Chat</p>
+            <div className="relative">
               <textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleStartChat();
+                    handleStartChat('general-chat');
                   }
                 }}
-                placeholder={`Message ${selectedAgent?.name || 'General Chat'}...`}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
+                placeholder="Type a message to start a general chat..."
+                rows={2}
+                className="w-full px-3 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
               />
-              <div className="flex justify-end mt-3">
-                <button
-                  onClick={() => handleStartChat()}
-                  disabled={!chatInput.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
-                  <span>Start Chat</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </button>
-              </div>
+              <button
+                onClick={() => handleStartChat('general-chat')}
+                disabled={!chatInput.trim()}
+                className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </button>
             </div>
+          </div>
 
-            {/* Previous Chats with this Agent */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Previous Chats with {selectedAgent?.name || 'General Chat'}
-              </h3>
-              {agentChats.length > 0 ? (
-                <div className="space-y-2">
-                  {agentChats.map(session => (
+          {/* Previous Chats */}
+          <div>
+            <h2 className="text-sm font-medium text-gray-700 mb-3">Previous Chats</h2>
+            {projectChats.length > 0 ? (
+              <div className="space-y-2">
+                {projectChats.map(session => {
+                  const agent = agents.find(a => a.id === session.agentId);
+                  return (
                     <button
                       key={session.id}
                       onClick={() => onSelectChat(session.id)}
-                      className="w-full p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                      className="w-full p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all text-left flex items-center gap-3"
                     >
-                      <p className="text-sm text-gray-900 truncate">
-                        {session.title || session.messages?.[0]?.content?.slice(0, 50) || 'New chat'}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(session.createdAt).toLocaleDateString()}
-                      </p>
+                      <span className="text-lg">{agent?.icon || '💬'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 truncate">
+                          {session.title || session.messages?.[0]?.content?.slice(0, 50) || 'New chat'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {agent?.name || 'General Chat'} • {new Date(session.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
                     </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 bg-white rounded-lg border border-gray-200 text-center">
-                  <p className="text-sm text-gray-500">No previous chats</p>
-                </div>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-6 bg-white rounded-xl border border-gray-200 text-center">
+                <p className="text-sm text-gray-500">No chats yet in this project</p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Click outside to close add agent dropdown */}

@@ -703,6 +703,15 @@ function App() {
     setCurrentMessages([]);
   };
 
+  const handleSelectAgentInProject = (agentId) => {
+    // Select agent while keeping project context
+    setSelectedAgentId(agentId);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setPromptExpanded(false);
+    // activeProjectId stays the same
+  };
+
   const handleAddAgentToProject = (projectId, agentId) => {
     setProjects(prev => prev.map(p => {
       if (p.id !== projectId) return p;
@@ -781,6 +790,7 @@ function App() {
               onAddAgentToProject={handleAddAgentToProject}
               onUpdateProjectPrompt={handleUpdateProjectPrompt}
               projectPromptOverrides={projectPromptOverrides}
+              onSelectAgent={handleSelectAgentInProject}
             />
           ) : (
             <MainContent
