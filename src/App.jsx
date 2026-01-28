@@ -14,6 +14,7 @@ import { useAuth } from './components/Auth';
 import { sendMessage } from './services/llm';
 import { getModelConfig, getProviderForModel } from './config/models';
 import { agents as builtInAgents } from './config/agents';
+import { getConfiguredProviders } from './services/secureKeys';
 import {
   loadGitHubConfig,
   saveGitHubConfig,
@@ -48,6 +49,7 @@ function App() {
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [showTrialWarning, setShowTrialWarning] = useState(false)
   const [pendingTrialMessage, setPendingTrialMessage] = useState(null)
+  const [serverConfiguredProviders, setServerConfiguredProviders] = useState({}) // Which providers have server-side keys
 
   // Core state - API keys for multiple providers
   const [apiKeys, setApiKeys] = useState(() => {
@@ -166,6 +168,17 @@ function App() {
   useEffect(() => {
     localStorage.setItem(PROJECT_PROMPTS_KEY, JSON.stringify(projectPromptOverrides));
   }, [projectPromptOverrides]);
+
+  // Load server-side configured providers when user is authenticated
+  useEffect(() => {
+    if (user) {
+      getConfiguredProviders()
+        .then(data => setServerConfiguredProviders(data.providers || {}))
+        .catch(err => console.error('Failed to load server API key status:', err));
+    } else {
+      setServerConfiguredProviders({});
+    }
+  }, [user]);
 
   // Load messages when chat session changes
   useEffect(() => {
@@ -772,22 +785,28 @@ function App() {
               onUpdatePrompt={handleUpdatePrompt}
               onStartGeneralChat={(initialMessage) => {
                 setSelectedAgentId('general-chat');
-                // If there's an initial message, send it after switching
+                // If there's an initial message, send it with agent passed directly
+                // (don't rely on state update timing)
                 if (initialMessage) {
-                  setTimeout(() => handleSendMessage(initialMessage), 0);
+                  setTimeout(() => handleSendMessage(initialMessage, GENERAL_CHAT_AGENT), 0);
                 }
               }}
               sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
               apiKeys={apiKeys}
+              serverConfiguredProviders={serverConfiguredProviders}
               githubEnabled={isGitHubConfigured(githubConfig)}
               onShowVersionHistory={() => setShowVersionHistory(true)}
               onClose={() => {
                 setSelectedAgentId(null);
                 setActiveChatId(null);
                 setCurrentMessages([]);
-                setActiveProjectId(null);
+                // Keep project active if in project context (go back to project view, not home)
+                // Only clear project if not in a project
+                if (!activeProject) {
+                  setActiveProjectId(null);
+                }
               }}
               activeProject={activeProject}
             />

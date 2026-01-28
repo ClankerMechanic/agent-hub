@@ -17,9 +17,11 @@ export function MainContent({
   selectedModel,
   onModelChange,
   apiKeys,
+  serverConfiguredProviders = {},
   githubEnabled,
   onShowVersionHistory,
-  onClose
+  onClose,
+  activeProject
 }) {
   const [homeInput, setHomeInput] = useState('');
 
@@ -93,7 +95,9 @@ export function MainContent({
         selectedModel={selectedModel}
         onModelChange={onModelChange}
         apiKeys={apiKeys}
+        serverConfiguredProviders={serverConfiguredProviders}
         onClose={onClose}
+        activeProject={activeProject}
       />
 
       {/* Editable Prompt */}
