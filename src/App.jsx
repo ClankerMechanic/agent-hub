@@ -253,16 +253,11 @@ function App() {
   };
 
   const handleNewChat = () => {
-    if (selectedAgentId) {
-      // Keep agent, just clear chat for a new session
-      setActiveChatId(null);
-      setCurrentMessages([]);
-    } else {
-      // No agent selected - go to Generic Chat
-      setSelectedAgentId('general-chat');
-      setActiveChatId(null);
-      setCurrentMessages([]);
-    }
+    // Always start a new general chat
+    setSelectedAgentId('general-chat');
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setActiveProjectId(null); // Clear project context too
   };
 
   const handleSelectChat = (chatId) => {
@@ -520,6 +515,25 @@ function App() {
         // Queue for later sync
         setPendingSync(prev => [...prev, { type: 'save', agent }]);
       }
+    }
+  };
+
+  const handleDeleteCustomAgent = (agentId) => {
+    const agent = customAgents.find(a => a.id === agentId);
+    if (!agent) return;
+
+    if (!window.confirm(`Are you sure you want to delete "${agent.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    // Remove from custom agents
+    setCustomAgents(prev => prev.filter(a => a.id !== agentId));
+
+    // If this agent was selected, clear selection
+    if (selectedAgentId === agentId) {
+      setSelectedAgentId(null);
+      setActiveChatId(null);
+      setCurrentMessages([]);
     }
   };
 
@@ -829,6 +843,7 @@ function App() {
               setEditingAgent(null);
               setShowCreateModal(true);
             }}
+            onDeleteAgent={handleDeleteCustomAgent}
           />
         }
       />

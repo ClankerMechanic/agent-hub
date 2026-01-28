@@ -4,7 +4,8 @@ export function RightSidebar({
   agents,
   selectedAgentId,
   onSelectAgent,
-  onCreateAgent
+  onCreateAgent,
+  onDeleteAgent
 }) {
   const builtInAgents = agents.filter(a => !a.isCustom);
   const customAgents = agents.filter(a => a.isCustom);
@@ -58,6 +59,7 @@ export function RightSidebar({
                     agent={agent}
                     isSelected={agent.id === selectedAgentId}
                     onClick={() => onSelectAgent(agent.id)}
+                    onDelete={onDeleteAgent}
                   />
                 ))}
               </div>
