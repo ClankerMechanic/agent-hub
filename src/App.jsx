@@ -46,6 +46,8 @@ function App() {
   // Auth state
   const { user, signOut } = useAuth()
   const [showLoginModal, setShowLoginModal] = useState(false)
+  const [showTrialWarning, setShowTrialWarning] = useState(false)
+  const [pendingTrialMessage, setPendingTrialMessage] = useState(null)
 
   // Core state - API keys for multiple providers
   const [apiKeys, setApiKeys] = useState(() => {
@@ -270,7 +272,18 @@ function App() {
         alert(`Trial messages are limited to ${MAX_TRIAL_LENGTH} characters. Sign up for unlimited access!`);
         return;
       }
+      // Warn if using trial on General Chat (unless they already confirmed)
+      if (agent.isGeneralChat && !pendingTrialMessage) {
+        setPendingTrialMessage({ content, agent, projectId: projectIdOverride });
+        setShowTrialWarning(true);
+        return;
+      }
       isTrialMessage = true;
+    }
+
+    // Clear pending message if we're proceeding
+    if (pendingTrialMessage) {
+      setPendingTrialMessage(null);
     }
 
     // Determine which model to use (agent's preferred or global, force Claude for trial)
@@ -829,6 +842,53 @@ function App() {
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
       />
+
+      {/* Trial Warning Dialog */}
+      {showTrialWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Heads up! You only get 1 free message
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
+              You're about to use your trial message on <strong>General Chat</strong>.
+              Our specialized agents (like Meeting Summarizer or Proofreader) are designed
+              to give you much better results for specific tasks.
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Want to try an agent instead?
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => {
+                  setShowTrialWarning(false);
+                  setPendingTrialMessage(null);
+                  // Could optionally scroll to agents or highlight them
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              >
+                Pick an Agent
+              </button>
+              <button
+                onClick={() => {
+                  setShowTrialWarning(false);
+                  if (pendingTrialMessage) {
+                    // Re-trigger send with the pending message
+                    handleSendMessage(
+                      pendingTrialMessage.content,
+                      pendingTrialMessage.agent,
+                      pendingTrialMessage.projectId
+                    );
+                  }
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Continue Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
