@@ -1,7 +1,7 @@
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 
-export async function executeAgent(systemPrompt, userInput, apiKey) {
+export async function executeAgent(systemPrompt, userInput, apiKey, model = DEFAULT_MODEL) {
   if (!apiKey) {
     throw new Error('API key is required');
   }
@@ -20,7 +20,7 @@ export async function executeAgent(systemPrompt, userInput, apiKey) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: model,
         max_tokens: 4096,
         system: systemPrompt,
         messages: [

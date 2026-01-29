@@ -1,200 +1,919 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Settings } from './components/Settings';
-import { AgentCard, CreateAgentCard } from './components/AgentCard';
-import { ExecutionView } from './components/ExecutionView';
-import { Navigation } from './components/Navigation';
 import { CreateAgentModal } from './components/CreateAgentModal';
-import { HistoryView } from './components/HistoryView';
+import { CreateProjectModal } from './components/CreateProjectModal';
+import { ProjectView } from './components/ProjectView';
+import { GitHubSettings } from './components/GitHubSettings';
+import { VersionHistory } from './components/VersionHistory';
+import { AppLayout } from './components/layout/AppLayout';
+import { LeftSidebar } from './components/layout/LeftSidebar';
+import { RightSidebar } from './components/layout/RightSidebar';
+import { MainContent } from './components/layout/MainContent';
+import { LoginModal } from './components/LoginModal';
+import { useAuth } from './components/Auth';
+import { sendMessage } from './services/llm';
+import { getModelConfig, getProviderForModel } from './config/models';
 import { agents as builtInAgents } from './config/agents';
+import { getConfiguredProviders } from './services/secureKeys';
+import {
+  loadGitHubConfig,
+  saveGitHubConfig,
+  isGitHubConfigured,
+  listAgents as listGitHubAgents,
+  saveAgent as saveAgentToGitHub,
+  SYNC_STATUS
+} from './services/github';
 
-const API_KEY_STORAGE_KEY = 'agent-hub-api-key';
+const API_KEYS_STORAGE_KEY = 'agent-hub-api-keys';
 const CUSTOM_AGENTS_KEY = 'agent-hub-custom-agents';
-const HISTORY_KEY = 'agent-hub-history';
+const CHAT_SESSIONS_KEY = 'agent-hub-sessions';
+const MODEL_KEY = 'agent-hub-model';
+const LLM_SETTINGS_KEY = 'agent-hub-llm-settings';
+const PROJECTS_KEY = 'agent-hub-projects';
+const PROJECT_PROMPTS_KEY = 'agent-hub-project-prompts';
+const PROMPT_OVERRIDES_KEY = 'agent-hub-prompt-overrides';
+const DARK_MODE_KEY = 'agent-hub-dark-mode';
+
+// General chat pseudo-agent (no system prompt)
+const GENERAL_CHAT_AGENT = {
+  id: 'general-chat',
+  name: 'General Chat',
+  description: 'Chat directly with the LLM without a system prompt',
+  icon: '💬',
+  category: 'General',
+  systemPrompt: '',
+  isGeneralChat: true
+};
 
 function App() {
-  const [apiKey, setApiKey] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState(null);
-  const [view, setView] = useState('loading');
-  const [activeTab, setActiveTab] = useState('agents');
-  const [customAgents, setCustomAgents] = useState([]);
-  const [history, setHistory] = useState([]);
+  // Auth state
+  const { user, signOut } = useAuth()
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [trialExpiredModal, setTrialExpiredModal] = useState(false) // Show trial expired message in login modal
+  const [showTrialWarning, setShowTrialWarning] = useState(false)
+  const [pendingTrialMessage, setPendingTrialMessage] = useState(null)
+  const [serverConfiguredProviders, setServerConfiguredProviders] = useState({}) // Which providers have server-side keys
+
+  // Core state - API keys for multiple providers
+  const [apiKeys, setApiKeys] = useState(() => {
+    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+    // Migration: check for old single API key
+    const oldKey = localStorage.getItem('agent-hub-api-key');
+    if (oldKey) {
+      return { claude: oldKey };
+    }
+    return {};
+  });
+  // Don't auto-show settings - logged out users get a free trial message
+  const [showSettings, setShowSettings] = useState(false);
+
+  // LLM settings
+  const [llmSettings, setLlmSettings] = useState(() => {
+    const stored = localStorage.getItem(LLM_SETTINGS_KEY);
+    return stored ? JSON.parse(stored) : {
+      temperature: 0.7,
+      maxTokens: 4096,
+      extendedThinking: false,
+      thinkingBudget: 1024
+    };
+  });
+
+  // Agent state
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
+  const [customAgents, setCustomAgents] = useState(() => {
+    const stored = localStorage.getItem(CUSTOM_AGENTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  // Chat state
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [chatSessions, setChatSessions] = useState(() => {
+    const stored = localStorage.getItem(CHAT_SESSIONS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  });
+  const [currentMessages, setCurrentMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // UI state
+  const [selectedModel, setSelectedModel] = useState(() =>
+    localStorage.getItem(MODEL_KEY) || 'claude-sonnet-4-20250514'
+  );
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
-  const [initialInput, setInitialInput] = useState('');
+  const [promptOverrides, setPromptOverrides] = useState(() => {
+    const stored = localStorage.getItem(PROMPT_OVERRIDES_KEY);
+    return stored ? JSON.parse(stored) : {};
+  }); // Persistent prompt edits for built-in agents
 
-  // Load data from localStorage on mount
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem(DARK_MODE_KEY);
+    return stored ? JSON.parse(stored) : false;
+  });
+
+  // GitHub sync state
+  const [githubConfig, setGithubConfig] = useState(() => loadGitHubConfig());
+  const [showGitHubSettings, setShowGitHubSettings] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(SYNC_STATUS.IDLE);
+  const [pendingSync, setPendingSync] = useState([]); // Queue for offline changes
+
+  // Projects state
+  const [projects, setProjects] = useState(() => {
+    const stored = localStorage.getItem(PROJECTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [projectPromptOverrides, setProjectPromptOverrides] = useState(() => {
+    const stored = localStorage.getItem(PROJECT_PROMPTS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  });
+
+  // Combine built-in and custom agents
+  const allAgents = useMemo(() => [...builtInAgents, ...customAgents], [customAgents]);
+
+  // Get selected agent object (including generic chat and prompt overrides)
+  const selectedAgent = useMemo(() => {
+    if (selectedAgentId === 'general-chat') return GENERAL_CHAT_AGENT;
+    const agent = allAgents.find(a => a.id === selectedAgentId);
+    if (!agent) return null;
+
+    // Apply project-specific override if in project context
+    if (activeProjectId) {
+      const projectKey = `${activeProjectId}:${selectedAgentId}`;
+      if (projectPromptOverrides[projectKey]) {
+        return { ...agent, systemPrompt: projectPromptOverrides[projectKey] };
+      }
+    }
+
+    // Apply global prompt override if exists (for non-project context)
+    if (promptOverrides[selectedAgentId]) {
+      return { ...agent, systemPrompt: promptOverrides[selectedAgentId] };
+    }
+    return agent;
+  }, [allAgents, selectedAgentId, promptOverrides, activeProjectId, projectPromptOverrides]);
+
+  // Persist to localStorage
   useEffect(() => {
-    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-    const storedCustomAgents = localStorage.getItem(CUSTOM_AGENTS_KEY);
-    const storedHistory = localStorage.getItem(HISTORY_KEY);
+    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(apiKeys));
+  }, [apiKeys]);
 
-    if (storedKey) {
-      setApiKey(storedKey);
-      setView('home');
-    } else {
-      setView('settings');
-    }
+  useEffect(() => {
+    localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings));
+  }, [llmSettings]);
 
-    if (storedCustomAgents) {
-      setCustomAgents(JSON.parse(storedCustomAgents));
-    }
-
-    if (storedHistory) {
-      setHistory(JSON.parse(storedHistory));
-    }
-  }, []);
-
-  // Save custom agents to localStorage
   useEffect(() => {
     localStorage.setItem(CUSTOM_AGENTS_KEY, JSON.stringify(customAgents));
   }, [customAgents]);
 
-  // Save history to localStorage
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  }, [history]);
+    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions));
+  }, [chatSessions]);
 
-  const allAgents = [...builtInAgents, ...customAgents];
+  useEffect(() => {
+    localStorage.setItem(MODEL_KEY, selectedModel);
+  }, [selectedModel]);
 
-  const handleSaveApiKey = (key) => {
-    localStorage.setItem(API_KEY_STORAGE_KEY, key);
-    setApiKey(key);
-    setView('home');
+  useEffect(() => {
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_PROMPTS_KEY, JSON.stringify(projectPromptOverrides));
+  }, [projectPromptOverrides]);
+
+  useEffect(() => {
+    localStorage.setItem(PROMPT_OVERRIDES_KEY, JSON.stringify(promptOverrides));
+  }, [promptOverrides]);
+
+  // Dark mode - persist and apply to document
+  useEffect(() => {
+    localStorage.setItem(DARK_MODE_KEY, JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  // Load server-side configured providers when user is authenticated
+  // Also clear user-specific data when logged out
+  useEffect(() => {
+    if (user) {
+      getConfiguredProviders()
+        .then(data => setServerConfiguredProviders(data.providers || {}))
+        .catch(err => console.error('Failed to load server API key status:', err));
+    } else {
+      // Clear user-specific data when logged out
+      setServerConfiguredProviders({});
+      setChatSessions({});
+      setCurrentMessages([]);
+      setActiveChatId(null);
+      setCustomAgents([]);
+      setProjects([]);
+      setProjectPromptOverrides({});
+      setPromptOverrides({});
+    }
+  }, [user]);
+
+  // Load messages when chat session changes
+  useEffect(() => {
+    if (activeChatId && chatSessions[activeChatId]) {
+      setCurrentMessages(chatSessions[activeChatId].messages || []);
+    } else {
+      setCurrentMessages([]);
+    }
+  }, [activeChatId, chatSessions]);
+
+  // GitHub: Sync agents from GitHub on load
+  useEffect(() => {
+    const syncFromGitHub = async () => {
+      if (!isGitHubConfigured(githubConfig)) return;
+
+      setSyncStatus(SYNC_STATUS.SYNCING);
+      try {
+        const result = await listGitHubAgents(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          githubConfig.agentsPath
+        );
+
+        if (result.success && result.agents.length > 0) {
+          // Merge with local custom agents (GitHub is source of truth)
+          const githubAgentIds = new Set(result.agents.map(a => a.id));
+          const localOnlyAgents = customAgents.filter(a => !githubAgentIds.has(a.id));
+
+          // Mark GitHub agents with sync metadata
+          const syncedAgents = result.agents.map(a => ({
+            ...a,
+            isCustom: true,
+            syncedFromGitHub: true,
+            lastSynced: Date.now()
+          }));
+
+          setCustomAgents([...syncedAgents, ...localOnlyAgents]);
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        } else {
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        }
+      } catch (error) {
+        console.error('GitHub sync failed:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+      }
+    };
+
+    syncFromGitHub();
+  }, [githubConfig.enabled, githubConfig.token, githubConfig.owner, githubConfig.repo]);
+
+  // Handlers
+  const handleSaveApiKeys = (keys) => {
+    setApiKeys(keys);
+    setShowSettings(false);
   };
 
-  const handleSelectAgent = (agent) => {
-    setSelectedAgent(agent);
-    setInitialInput('');
-    setView('execution');
+  const handleSignOut = async () => {
+    await signOut();
+    // Clear all user state on logout
+    setSelectedAgentId(null);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setActiveProjectId(null);
+    setChatSessions({});
+    setCustomAgents([]);
+    setProjects([]);
+    setProjectPromptOverrides({});
+    setPromptOverrides({});
+    setServerConfiguredProviders({});
+    // Clear localStorage
+    localStorage.removeItem(CHAT_SESSIONS_KEY);
+    localStorage.removeItem(CUSTOM_AGENTS_KEY);
+    localStorage.removeItem(PROJECTS_KEY);
+    localStorage.removeItem(PROJECT_PROMPTS_KEY);
+    localStorage.removeItem(PROMPT_OVERRIDES_KEY);
   };
 
-  const handleBackToHome = () => {
-    setSelectedAgent(null);
-    setInitialInput('');
-    setView('home');
+  const handleSelectAgent = (agentId) => {
+    setSelectedAgentId(agentId);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setPromptExpanded(false);
+    setActiveProjectId(null); // Clear project context when selecting agent from sidebar
   };
 
-  const handleOpenSettings = () => {
-    setView('settings');
+  const handleNewChat = () => {
+    // Always start a new general chat
+    setSelectedAgentId('general-chat');
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setActiveProjectId(null); // Clear project context too
   };
 
-  const handleSaveCustomAgent = (agent) => {
+  const handleSelectChat = (chatId) => {
+    const session = chatSessions[chatId];
+    if (session) {
+      setActiveChatId(chatId);
+      setSelectedAgentId(session.agentId);
+      setActiveProjectId(null); // Clear project context when selecting from history
+    }
+  };
+
+  const handleSendMessage = async (content, agentOverride = null, projectIdOverride = null) => {
+    const agent = agentOverride || selectedAgent;
+    if (!agent || !content.trim()) return;
+
+    // Trial message logic for non-authenticated users
+    const TRIAL_KEY = 'agent-hub-trial-used';
+    const MAX_TRIAL_LENGTH = 750;
+    let isTrialMessage = false;
+    let wasTruncated = false;
+    let messageContent = content.trim(); // May be truncated for trial users
+
+    if (!user) {
+      const trialUsed = localStorage.getItem(TRIAL_KEY);
+      if (trialUsed) {
+        // Trial already used, require sign up
+        setTrialExpiredModal(true);
+        setShowLoginModal(true);
+        return;
+      }
+      // Truncate message if too long (alert after message sends)
+      if (messageContent.length > MAX_TRIAL_LENGTH) {
+        messageContent = messageContent.slice(0, MAX_TRIAL_LENGTH);
+        wasTruncated = true;
+      }
+      // Warn if using trial on General Chat (unless they already confirmed)
+      if (agent.isGeneralChat && !pendingTrialMessage) {
+        setPendingTrialMessage({ content: messageContent, agent, projectId: projectIdOverride });
+        setShowTrialWarning(true);
+        return;
+      }
+      isTrialMessage = true;
+    }
+
+    // Clear pending message if we're proceeding
+    if (pendingTrialMessage) {
+      setPendingTrialMessage(null);
+    }
+
+    // Determine which model to use (agent's preferred or global, force Claude for trial)
+    const modelToUse = isTrialMessage ? 'claude-sonnet-4-20250514' : (agent.preferredModel || selectedModel);
+
+    // For trial messages, use the secure edge function instead of direct API call
+    const effectiveApiKeys = apiKeys;
+
+    // Determine if we should use the server-side proxy (authenticated user with no local keys)
+    const useProxy = !!user && Object.keys(effectiveApiKeys).length === 0;
+
+    // Check if we have an API key for this model's provider (skip if using proxy or trial)
+    const provider = getProviderForModel(modelToUse);
+    const providerKeyMap = { anthropic: 'claude', openai: 'openai', google: 'gemini' };
+    const keyName = providerKeyMap[provider];
+    if (!useProxy && !isTrialMessage && !effectiveApiKeys[keyName]) {
+      alert(`No API key configured for ${provider}. Go to Settings to add your API key.`);
+      return;
+    }
+    const modelConfig = getModelConfig(modelToUse);
+
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: messageContent,
+      timestamp: Date.now()
+    };
+
+    // Add user message to current messages
+    const newMessages = [...currentMessages, userMessage];
+    setCurrentMessages(newMessages);
+    setIsLoading(true);
+
+    try {
+      // Build messages for API (only user/assistant content)
+      const apiMessages = newMessages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      // Get system prompt (check for project-specific override)
+      const effectiveProjectId = projectIdOverride || activeProjectId;
+      let systemPrompt = agent.systemPrompt;
+      if (effectiveProjectId && agent.id) {
+        const overrideKey = `${effectiveProjectId}:${agent.id}`;
+        if (projectPromptOverrides[overrideKey]) {
+          systemPrompt = projectPromptOverrides[overrideKey];
+        }
+      }
+
+      let result;
+
+      if (isTrialMessage) {
+        // Use secure edge function for trial messages (API key stays server-side)
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kefjklkgnfvswbflgams.supabase.co';
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_FN9yxizn-boUD9X5ImPhaQ_l5wp0Ew1';
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/trial-message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            messages: apiMessages,
+            systemPrompt: systemPrompt
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.error) {
+          result = { success: false, error: data.error || 'Trial message failed' };
+        } else {
+          result = {
+            success: true,
+            content: data.content,
+            usage: data.usage
+          };
+        }
+      } else {
+        // Prepare options for authenticated users
+        const options = {
+          temperature: llmSettings.temperature,
+          maxTokens: llmSettings.maxTokens
+        };
+
+        // Extended thinking only for supported Claude models
+        if (llmSettings.extendedThinking && modelConfig?.supportsExtendedThinking) {
+          options.extendedThinking = true;
+          options.thinkingBudget = llmSettings.thinkingBudget;
+        }
+
+        result = await sendMessage(
+          apiMessages,
+          systemPrompt,
+          effectiveApiKeys,
+          modelToUse,
+          options,
+          useProxy
+        );
+      }
+
+      // Mark trial as used after successful message
+      if (isTrialMessage) {
+        localStorage.setItem(TRIAL_KEY, 'true');
+        if (wasTruncated) {
+          alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
+        }
+      }
+
+      if (result.success) {
+        // Calculate cost if we have usage data
+        let cost = 0;
+        if (result.usage && modelConfig) {
+          const inputCost = (result.usage.inputTokens / 1_000_000) * modelConfig.inputCost;
+          const outputCost = (result.usage.outputTokens / 1_000_000) * modelConfig.outputCost;
+          cost = inputCost + outputCost;
+        }
+
+        const assistantMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: result.content,
+          thinking: result.thinking,
+          timestamp: Date.now(),
+          model: modelToUse,
+          usage: result.usage ? {
+            ...result.usage,
+            cost
+          } : undefined
+        };
+
+        const updatedMessages = [...newMessages, assistantMessage];
+        setCurrentMessages(updatedMessages);
+
+        // Create or update chat session with usage tracking
+        const chatId = activeChatId || `chat-${Date.now()}`;
+        setChatSessions(prev => {
+          const existingSession = prev[chatId];
+          const existingUsage = existingSession?.totalUsage || { inputTokens: 0, outputTokens: 0, totalCost: 0 };
+
+          return {
+            ...prev,
+            [chatId]: {
+              id: chatId,
+              agentId: agent.id,
+              projectId: existingSession?.projectId || effectiveProjectId || null,
+              createdAt: existingSession?.createdAt || Date.now(),
+              messages: updatedMessages,
+              totalUsage: result.usage ? {
+                inputTokens: existingUsage.inputTokens + result.usage.inputTokens,
+                outputTokens: existingUsage.outputTokens + result.usage.outputTokens,
+                totalCost: existingUsage.totalCost + cost
+              } : existingUsage
+            }
+          };
+        });
+
+        if (!activeChatId) {
+          setActiveChatId(chatId);
+        }
+      } else {
+        // Show error as assistant message
+        const errorMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: `Error: ${result.error}`,
+          timestamp: Date.now(),
+          isError: true
+        };
+        setCurrentMessages([...newMessages, errorMessage]);
+      }
+    } catch (error) {
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: `Error: ${error.message}`,
+        timestamp: Date.now(),
+        isError: true
+      };
+      setCurrentMessages([...newMessages, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveCustomAgent = async (agent) => {
+    // Save locally first
     if (editingAgent) {
       setCustomAgents(prev => prev.map(a => a.id === agent.id ? agent : a));
     } else {
       setCustomAgents(prev => [...prev, agent]);
     }
     setEditingAgent(null);
+    setShowCreateModal(false);
+
+    // Sync to GitHub if configured
+    if (isGitHubConfigured(githubConfig)) {
+      try {
+        setSyncStatus(SYNC_STATUS.SYNCING);
+        const message = editingAgent
+          ? `Update agent: ${agent.name}`
+          : `Create agent: ${agent.name}`;
+
+        await saveAgentToGitHub(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          agent,
+          message,
+          githubConfig.agentsPath
+        );
+        setSyncStatus(SYNC_STATUS.SUCCESS);
+      } catch (error) {
+        console.error('Failed to sync to GitHub:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+        // Queue for later sync
+        setPendingSync(prev => [...prev, { type: 'save', agent }]);
+      }
+    }
   };
 
-  const handleEditAgent = (agent) => {
-    setEditingAgent(agent);
-    setShowCreateModal(true);
-  };
+  const handleDeleteCustomAgent = (agentId) => {
+    const agent = customAgents.find(a => a.id === agentId);
+    if (!agent) return;
 
-  const handleDeleteAgent = (agentId) => {
+    if (!window.confirm(`Are you sure you want to delete "${agent.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    // Remove from custom agents
     setCustomAgents(prev => prev.filter(a => a.id !== agentId));
-  };
 
-  const handleSaveHistory = (entry) => {
-    setHistory(prev => [entry, ...prev]);
-  };
-
-  const handleClearHistory = () => {
-    if (confirm('Clear all history?')) {
-      setHistory([]);
+    // If this agent was selected, clear selection
+    if (selectedAgentId === agentId) {
+      setSelectedAgentId(null);
+      setActiveChatId(null);
+      setCurrentMessages([]);
     }
   };
 
-  const handleRerun = (historyItem) => {
-    const agent = allAgents.find(a => a.id === historyItem.agentId);
-    if (agent) {
-      setSelectedAgent(agent);
-      setInitialInput(historyItem.input);
-      setView('execution');
-      setActiveTab('agents');
+  const handleGitHubConfigChange = (config) => {
+    setGithubConfig(config);
+    saveGitHubConfig(config);
+  };
+
+  const handleUpdatePrompt = async (newPrompt) => {
+    // If in project context, save as project-specific override
+    if (activeProjectId && selectedAgentId) {
+      const key = `${activeProjectId}:${selectedAgentId}`;
+      setProjectPromptOverrides(prev => ({
+        ...prev,
+        [key]: newPrompt
+      }));
+      return;
+    }
+
+    // If custom agent, update it directly
+    if (selectedAgent?.isCustom) {
+      const updatedAgent = { ...selectedAgent, systemPrompt: newPrompt };
+      setCustomAgents(prev =>
+        prev.map(a => a.id === selectedAgentId ? updatedAgent : a)
+      );
+
+      // Sync to GitHub if configured
+      if (isGitHubConfigured(githubConfig)) {
+        try {
+          setSyncStatus(SYNC_STATUS.SYNCING);
+          await saveAgentToGitHub(
+            githubConfig.token,
+            githubConfig.owner,
+            githubConfig.repo,
+            updatedAgent,
+            `Update prompt for ${updatedAgent.name}`,
+            githubConfig.agentsPath
+          );
+          setSyncStatus(SYNC_STATUS.SUCCESS);
+        } catch (error) {
+          console.error('Failed to sync to GitHub:', error);
+          setSyncStatus(SYNC_STATUS.ERROR);
+        }
+      }
+      return;
+    }
+
+    // For built-in agents (not in project), save as session override
+    // This persists in localStorage but doesn't create a new custom agent
+    setPromptOverrides(prev => ({
+      ...prev,
+      [selectedAgentId]: newPrompt
+    }));
+  };
+
+  const handleRevertVersion = async (versionContent) => {
+    if (!selectedAgent) return;
+
+    // Create updated agent from version content
+    const updatedAgent = {
+      ...selectedAgent,
+      ...versionContent,
+      id: selectedAgent.id // Keep the same ID
+    };
+
+    setCustomAgents(prev =>
+      prev.map(a => a.id === selectedAgent.id ? updatedAgent : a)
+    );
+
+    // Sync to GitHub
+    if (isGitHubConfigured(githubConfig)) {
+      try {
+        setSyncStatus(SYNC_STATUS.SYNCING);
+        await saveAgentToGitHub(
+          githubConfig.token,
+          githubConfig.owner,
+          githubConfig.repo,
+          updatedAgent,
+          `Revert ${updatedAgent.name} to previous version`,
+          githubConfig.agentsPath
+        );
+        setSyncStatus(SYNC_STATUS.SUCCESS);
+      } catch (error) {
+        console.error('Failed to sync revert to GitHub:', error);
+        setSyncStatus(SYNC_STATUS.ERROR);
+      }
     }
   };
 
-  // Loading state
-  if (view === 'loading') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
+  const handleForkVersion = (versionContent) => {
+    // Create a new agent based on the old version
+    const newAgent = {
+      ...versionContent,
+      id: `custom-${Date.now()}`,
+      name: `${versionContent.name} (Fork)`,
+      isCustom: true
+    };
 
-  // Settings view
-  if (view === 'settings') {
-    return <Settings onSave={handleSaveApiKey} initialApiKey={apiKey} />;
-  }
+    setEditingAgent(null);
+    setShowCreateModal(true);
+    // Pre-populate the modal with the forked content
+    setEditingAgent(newAgent);
+  };
 
-  // Execution view
-  if (view === 'execution' && selectedAgent) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navigation
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            handleBackToHome();
-          }}
-          onSettingsClick={handleOpenSettings}
-        />
-        <div className="p-4">
-          <ExecutionView
-            agent={selectedAgent}
-            apiKey={apiKey}
-            onBack={handleBackToHome}
-            onSaveHistory={handleSaveHistory}
-            initialInput={initialInput}
-          />
-        </div>
-      </div>
-    );
-  }
+  // Project handlers
+  const handleCreateProject = (project) => {
+    setProjects(prev => [...prev, project]);
+  };
 
-  // Main view with tabs
+  const handleSelectProject = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setActiveProjectId(projectId);
+      setSelectedAgentId(null); // Don't select an agent yet, show project view
+      setActiveChatId(null);
+      setCurrentMessages([]);
+    }
+  };
+
+  const handleDeleteProject = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    const projectName = project?.name || 'this project';
+    if (!window.confirm(`Are you sure you want to delete "${projectName}"? This cannot be undone.`)) {
+      return;
+    }
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+    if (activeProjectId === projectId) {
+      setActiveProjectId(null);
+    }
+  };
+
+  const handleStartProjectChat = (agentId, initialMessage, projectId) => {
+    // Check auth/trial before changing any state
+    const TRIAL_KEY = 'agent-hub-trial-used';
+    const MAX_TRIAL_LENGTH = 750;
+    let messageToSend = initialMessage;
+
+    if (!user) {
+      const trialUsed = localStorage.getItem(TRIAL_KEY);
+      if (trialUsed) {
+        setTrialExpiredModal(true);
+        setShowLoginModal(true);
+        return;
+      }
+      // Truncate if too long
+      if (initialMessage.length > MAX_TRIAL_LENGTH) {
+        messageToSend = initialMessage.slice(0, MAX_TRIAL_LENGTH);
+        alert(`Your message was truncated to ${MAX_TRIAL_LENGTH} characters for the free trial. Sign up for unlimited access!`);
+      }
+    }
+
+    // Find the agent object
+    const agent = allAgents.find(a => a.id === agentId) ||
+      (agentId === 'general-chat' ? { id: 'general-chat', name: 'General Chat', systemPrompt: '' } : null);
+
+    if (!agent) return;
+
+    // Set context and send message - pass agent directly so we don't need to switch views
+    setSelectedAgentId(agentId);
+    setActiveProjectId(projectId);
+    setTimeout(() => handleSendMessage(messageToSend, agent, projectId), 0);
+  };
+
+  const handleBackFromProject = () => {
+    setActiveProjectId(null);
+    setSelectedAgentId(null);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+  };
+
+  const handleSelectAgentInProject = (agentId) => {
+    // Select agent while keeping project context
+    setSelectedAgentId(agentId);
+    setActiveChatId(null);
+    setCurrentMessages([]);
+    setPromptExpanded(false);
+    // activeProjectId stays the same
+  };
+
+  const handleAddAgentToProject = (projectId, agentId) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      const currentAgentIds = p.agentIds || (p.agentId ? [p.agentId] : []);
+      if (currentAgentIds.includes(agentId)) return p;
+      return {
+        ...p,
+        agentIds: [...currentAgentIds, agentId],
+        updatedAt: Date.now()
+      };
+    }));
+  };
+
+  const handleUpdateProjectPrompt = (projectId, agentId, prompt) => {
+    const key = `${projectId}:${agentId}`;
+    setProjectPromptOverrides(prev => {
+      if (prompt === null) {
+        // Remove override
+        const { [key]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: prompt };
+    });
+  };
+
+  // Get active project
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onSettingsClick={handleOpenSettings}
-      />
-
-      <div className="p-4">
-        {activeTab === 'agents' ? (
-          <div className="max-w-4xl mx-auto">
-            <div className="mb-6">
-              <p className="text-gray-600">Select an AI agent to get started</p>
-            </div>
-
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {allAgents.map((agent) => (
-                <AgentCard
-                  key={agent.id}
-                  agent={agent}
-                  onClick={() => handleSelectAgent(agent)}
-                  onEdit={handleEditAgent}
-                  onDelete={handleDeleteAgent}
-                />
-              ))}
-              <CreateAgentCard onClick={() => {
-                setEditingAgent(null);
-                setShowCreateModal(true);
-              }} />
-            </div>
-          </div>
-        ) : (
-          <HistoryView
-            history={history}
-            onRerun={handleRerun}
-            onClearHistory={handleClearHistory}
+    <>
+      <AppLayout
+        onHomeClick={() => {
+          setSelectedAgentId(null);
+          setActiveChatId(null);
+          setCurrentMessages([]);
+          setActiveProjectId(null); // Clear project context - go to actual home
+        }}
+        onSettingsClick={() => setShowSettings(true)}
+        user={user}
+        onSignOut={handleSignOut}
+        onSignIn={() => setShowLoginModal(true)}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+        leftSidebar={
+          <LeftSidebar
+            onNewChat={handleNewChat}
+            onSettingsClick={() => setShowSettings(true)}
+            chatSessions={chatSessions}
+            selectedAgentId={selectedAgentId}
+            activeChatId={activeChatId}
+            onSelectChat={handleSelectChat}
+            agents={allAgents}
+            onGitHubClick={() => setShowGitHubSettings(true)}
+            githubEnabled={isGitHubConfigured(githubConfig)}
+            syncStatus={syncStatus}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onSelectProject={handleSelectProject}
+            onCreateProject={() => setShowCreateProject(true)}
+            onDeleteProject={handleDeleteProject}
+            darkMode={darkMode}
           />
-        )}
-      </div>
+        }
+        mainContent={
+          activeProject && !selectedAgent ? (
+            <ProjectView
+              project={activeProject}
+              agents={[GENERAL_CHAT_AGENT, ...allAgents]}
+              allAgents={allAgents}
+              chatSessions={chatSessions}
+              onStartChat={handleStartProjectChat}
+              onSelectChat={handleSelectChat}
+              onBack={handleBackFromProject}
+              onAddAgentToProject={handleAddAgentToProject}
+              onUpdateProjectPrompt={handleUpdateProjectPrompt}
+              projectPromptOverrides={projectPromptOverrides}
+              onSelectAgent={handleSelectAgentInProject}
+              darkMode={darkMode}
+            />
+          ) : (
+            <MainContent
+              agent={selectedAgent}
+              messages={currentMessages}
+              isLoading={isLoading}
+              promptExpanded={promptExpanded}
+              onTogglePrompt={() => setPromptExpanded(!promptExpanded)}
+              onSendMessage={handleSendMessage}
+              onUpdatePrompt={handleUpdatePrompt}
+              onStartGeneralChat={(initialMessage) => {
+                setSelectedAgentId('general-chat');
+                // If there's an initial message, send it with agent passed directly
+                // (don't rely on state update timing)
+                if (initialMessage) {
+                  setTimeout(() => handleSendMessage(initialMessage, GENERAL_CHAT_AGENT), 0);
+                }
+              }}
+              sessionUsage={activeChatId ? chatSessions[activeChatId]?.totalUsage : null}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              apiKeys={apiKeys}
+              serverConfiguredProviders={serverConfiguredProviders}
+              githubEnabled={isGitHubConfigured(githubConfig)}
+              onShowVersionHistory={() => setShowVersionHistory(true)}
+              onClose={() => {
+                setSelectedAgentId(null);
+                setActiveChatId(null);
+                setCurrentMessages([]);
+                // Keep project active if in project context (go back to project view, not home)
+                // Only clear project if not in a project
+                if (!activeProject) {
+                  setActiveProjectId(null);
+                }
+              }}
+              activeProject={activeProject}
+              onBackToProject={() => {
+                // Go back to project view (clear agent, keep project)
+                setSelectedAgentId(null);
+                setActiveChatId(null);
+                setCurrentMessages([]);
+              }}
+              darkMode={darkMode}
+            />
+          )
+        }
+        rightSidebar={
+          <RightSidebar
+            agents={allAgents}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={handleSelectAgent}
+            onCreateAgent={() => {
+              setEditingAgent(null);
+              setShowCreateModal(true);
+            }}
+            onDeleteAgent={handleDeleteCustomAgent}
+            activeProjectId={activeProjectId}
+            darkMode={darkMode}
+          />
+        }
+      />
 
       <CreateAgentModal
         isOpen={showCreateModal}
@@ -204,8 +923,98 @@ function App() {
         }}
         onSave={handleSaveCustomAgent}
         editAgent={editingAgent}
+        apiKeys={apiKeys}
+        selectedModel={selectedModel}
       />
-    </div>
+
+      <GitHubSettings
+        config={githubConfig}
+        onConfigChange={handleGitHubConfigChange}
+        onClose={() => setShowGitHubSettings(false)}
+        isOpen={showGitHubSettings}
+      />
+
+      <VersionHistory
+        isOpen={showVersionHistory}
+        onClose={() => setShowVersionHistory(false)}
+        agent={selectedAgent}
+        githubConfig={githubConfig}
+        onRevert={handleRevertVersion}
+        onFork={handleForkVersion}
+      />
+
+      <CreateProjectModal
+        isOpen={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onSave={handleCreateProject}
+        agents={allAgents}
+      />
+
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => {
+          setShowLoginModal(false);
+          setTrialExpiredModal(false);
+        }}
+        trialExpired={trialExpiredModal}
+      />
+
+      {/* Trial Warning Dialog */}
+      {showTrialWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Heads up! You only get 1 free message
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
+              You're about to use your trial message on <strong>General Chat</strong>.
+              Our specialized agents (like Meeting Summarizer or Proofreader) are designed
+              to give you much better results for specific tasks.
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Want to try an agent instead?
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => {
+                  setShowTrialWarning(false);
+                  setPendingTrialMessage(null);
+                  // Could optionally scroll to agents or highlight them
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              >
+                Pick an Agent
+              </button>
+              <button
+                onClick={() => {
+                  setShowTrialWarning(false);
+                  if (pendingTrialMessage) {
+                    // Re-trigger send with the pending message
+                    handleSendMessage(
+                      pendingTrialMessage.content,
+                      pendingTrialMessage.agent,
+                      pendingTrialMessage.projectId
+                    );
+                  }
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Continue Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <Settings
+          onSave={handleSaveApiKeys}
+          onClose={() => setShowSettings(false)}
+          initialApiKeys={apiKeys}
+        />
+      )}
+    </>
   );
 }
 
