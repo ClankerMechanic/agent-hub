@@ -31,7 +31,7 @@ export function LandingPage() {
             Beta - Looking for early testers
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-            The prompt library you keep meaning to build.
+            One place to build, version, and run your AI agents.
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
             Stop copy-pasting prompts from random docs. Save your best AI workflows,
